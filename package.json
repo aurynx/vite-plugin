@@ -1,0 +1,58 @@
+{
+  "name": "@aurynx/vite-plugin",
+  "version": "0.1.0",
+  "description": "A Vite plugin to compile Aurynx template syntax into native, high-performance PHP.",
+  "author": "Anton Semenov",
+  "license": "MIT",
+  "homepage": "https://github.com/aurynx/vite-plugin#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aurynx/vite-plugin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aurynx/vite-plugin/issues"
+  },
+  "keywords": [
+    "vite",
+    "vite-plugin",
+    "php",
+    "template",
+    "aurynx",
+    "ssr"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "oxlint src test",
+    "test": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "@vitest/coverage-v8": "^3.2.4",
+    "oxlint": "^0.18.1",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.7",
+    "vitest": "^3.2.4"
+  },
+  "peerDependencies": {
+    "vite": "^7.0.0"
+  },
+  "lint-staged": {
+    "**/*.{js,ts}": "oxlint --fix"
+  }
+}
