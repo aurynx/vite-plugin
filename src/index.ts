@@ -30,6 +30,12 @@ interface AurynxPluginOptions {
      * @default '.anx.php'
      */
     viewExtension?: string;
+
+    /**
+     * Whether to perform an initial full compilation on startup / build.
+     * @default true
+     */
+    buildOnStart?: boolean;
 }
 
 const projectRoot = resolve(process.cwd());
@@ -47,6 +53,7 @@ export default function aurynx(options: AurynxPluginOptions = {}): Plugin {
         viewsPath: 'resources/views',
         cachePath: 'cache/views',
         viewExtension: '.anx.php',
+        buildOnStart: true,
         ...options,
     };
 
@@ -80,19 +87,63 @@ export default function aurynx(options: AurynxPluginOptions = {}): Plugin {
         }
     };
 
+    /**
+     * Recursively walk the views directory and compile all matching templates.
+     */
+    const initialBuild = async (): Promise<void> => {
+        try {
+            // Ensure the views directory exists.
+            await fs.access(paths.views).catch(() => { throw new Error('Views path does not exist'); });
+
+            const walk = async (dir: string): Promise<string[]> => {
+                const entries = await fs.readdir(dir, { withFileTypes: true });
+                const files = await Promise.all(entries.map(async (entry) => {
+                    const full = resolve(dir, entry.name);
+                    if (entry.isDirectory()) return walk(full);
+                    return full;
+                }));
+                return files.flat();
+            };
+
+            console.log('🔁 [Aurynx] Performing initial compilation...');
+            const all = await walk(paths.views);
+            const targets = all.filter(f => f.endsWith(config.viewExtension));
+
+            if (!targets.length) {
+                console.log('ℹ️ [Aurynx] No view templates found for initial compilation.');
+                return;
+            }
+
+            await Promise.all(targets.map(f => compileView(f)));
+            console.log(`✅ [Aurynx] Initial compilation finished (${targets.length} files).`);
+        } catch (err) {
+            console.warn('⚠️ [Aurynx] Skipping initial compilation:', err instanceof Error ? err.message : err);
+        }
+    };
+
     return {
         name: 'vite-plugin-aurynx',
 
-        // This hook gives us access to the Vite development server and its file watcher.
-        configureServer({ watcher }: ViteDevServer) {
-            // A single handler for file changes to keep the code DRY.
+        // Run initial build only during the production (Rollup) build phase.
+        buildStart: async () => {
+            if (process.env.NODE_ENV !== 'development' && config.buildOnStart) {
+                await initialBuild();
+            }
+        },
+
+        // This hook wires into the dev server and its file watcher.
+        // Await initial build so the cache is ready before the first request.
+        async configureServer({ watcher }: ViteDevServer) {
+            if (config.buildOnStart) {
+                await initialBuild();
+            }
+
             const listener = (file: string): void => {
                 if (file.startsWith(paths.views) && file.endsWith(config.viewExtension)) {
                     compileView(file);
                 }
             };
 
-            // We listen for both 'add' (new files) and 'change' (modified files) events.
             watcher.on('add', listener);
             watcher.on('change', listener);
         },
