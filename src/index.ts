@@ -2,6 +2,7 @@ import { promises as fs } from 'fs';
 import { resolve } from 'path';
 import { compile } from '@/compiler';
 import type { Plugin, ViteDevServer } from 'vite';
+import logger from '@/logger';
 
 /**
  * Configuration options for the Aurynx Vite plugin.
@@ -12,25 +13,21 @@ interface AurynxPluginOptions {
      * @default 'App\\View\\Components\\'
      */
     componentNamespace?: string;
-
     /**
      * Path to your source templates, relative to the project root.
      * @default 'resources/views'
      */
     viewsPath?: string;
-
     /**
      * Path where the compiled PHP templates should be stored.
      * @default 'cache/views'
      */
     cachePath?: string;
-
     /**
      * The file extension for your Aurynx templates.
      * @default '.anx.php'
      */
     viewExtension?: string;
-
     /**
      * Whether to perform an initial full compilation on startup / build.
      * @default true
@@ -81,9 +78,9 @@ export default function aurynx(options: AurynxPluginOptions = {}): Plugin {
             await fs.mkdir(outputDir, { recursive: true });
             await fs.writeFile(outputFile, compiled);
 
-            console.log(`✅ [Aurynx] Compiled: ${relativePath}`);
+            logger.log('✅ Compiled:', relativePath);
         } catch (error) {
-            console.error(`❌ [Aurynx] Error compiling view ${file}:`, error);
+            logger.error('❌ Error compiling view', file, error);
         }
     };
 
@@ -105,19 +102,19 @@ export default function aurynx(options: AurynxPluginOptions = {}): Plugin {
                 return files.flat();
             };
 
-            console.log('🔁 [Aurynx] Performing initial compilation...');
+            logger.log('🔁 Performing initial compilation...');
             const all = await walk(paths.views);
             const targets = all.filter(f => f.endsWith(config.viewExtension));
 
             if (!targets.length) {
-                console.log('ℹ️ [Aurynx] No view templates found for initial compilation.');
+                logger.info('ℹ️ No view templates found for initial compilation.');
                 return;
             }
 
             await Promise.all(targets.map(f => compileView(f)));
-            console.log(`✅ [Aurynx] Initial compilation finished (${targets.length} files).`);
+            logger.log(`✅ Initial compilation finished (${targets.length} files).`);
         } catch (err) {
-            console.warn('⚠️ [Aurynx] Skipping initial compilation:', err instanceof Error ? err.message : err);
+            logger.warn('⚠️ Skipping initial compilation:', err instanceof Error ? err.message : err);
         }
     };
 
@@ -136,6 +133,7 @@ export default function aurynx(options: AurynxPluginOptions = {}): Plugin {
         async configureServer({ watcher }: ViteDevServer) {
             if (config.buildOnStart) {
                 await initialBuild();
+                logger.log('✅ Plugin ready');
             }
 
             const listener = (file: string): void => {
