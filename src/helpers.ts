@@ -40,3 +40,21 @@ export const tagNameToClassName = (tagName: string, baseNamespace: string): stri
 
     return baseNamespace + parts.join('\\');
 };
+
+/**
+ * Finds all unique PHP variables used within a string.
+ * @param content The string content to scan.
+ * @returns An array of unique variable names.
+ */
+export const findUsedVariables = (content: string): string[] => {
+    // This regex finds all occurrences of PHP variables.
+    const variableRegex = /\$([a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)/g;
+    const matches = content.match(variableRegex);
+
+    if (!matches) {
+        return [];
+    }
+
+    // Return a unique list of variables.
+    return [...new Set(matches)];
+};

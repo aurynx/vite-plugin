@@ -1,4 +1,4 @@
-import { compileDotNotationInExpression, parseAttributes, tagNameToClassName } from '@/helpers';
+import {compileDotNotationInExpression, findUsedVariables, parseAttributes, tagNameToClassName} from '@/helpers';
 
 const compileComponents = (template: string, baseNamespace: string): string => {
     const componentRegex = /<x-([a-zA-Z0-9.-]+)((?:\s+[:a-zA-Z0-9-]+(?:=(?:"[^"]*"|'[^']*'))?)*)\s*(?:\/>|>(.*?)<\/x-\1>)/sg;
@@ -26,8 +26,11 @@ const compileComponents = (template: string, baseNamespace: string): string => {
         }
 
         if (slotContent && slotContent.trim() !== '') {
+            const usedVariables = findUsedVariables(slotContent);
+            const useClause = usedVariables.length > 0 ? ` use (${usedVariables.join(', ')})` : '';
+
             const compiledSlot = compile(slotContent, baseNamespace);
-            const slotString = `function() { ?>${compiledSlot}<?php }`;
+            const slotString = `function()${useClause} { ?>${compiledSlot}<?php }`;
             callArgs.push(`slot: ${slotString}`);
         }
 
