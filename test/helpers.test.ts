@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {compileDotNotationInExpression, parseAttributes, tagNameToClassName} from '@/helpers';
+import {compileDotNotationInExpression, findUsedVariables, parseAttributes, tagNameToClassName} from '@/helpers';
 
 describe('Compiler Helpers', () => {
     describe('parseAttributes', () => {
@@ -62,6 +62,28 @@ describe('Compiler Helpers', () => {
             const expected = "data_get($user, 'id') === 1";
 
             expect(compileDotNotationInExpression(expression)).toBe(expected);
+        });
+    });
+
+    describe('findUsedVariables', () => {
+        it('should find variables inside directive expressions', () => {
+            const content = '@if ($user.isActive && $post) @each ($posts as $post)';
+
+            expect(findUsedVariables(content).sort()).toEqual(['$post', '$posts', '$user'].sort());
+        });
+
+        it('should find a single variable', () => {
+            expect(findUsedVariables('Hello {{ $name }}')).toEqual(['$name']);
+        });
+
+        it('should find multiple unique variables', () => {
+            const content = '{{ $user.name }} and {{ $post.title }}. User again: {{ $user.id }}';
+
+            expect(findUsedVariables(content).sort()).toEqual(['$post', '$user'].sort());
+        });
+
+        it('should return an empty array if no variables are found', () => {
+            expect(findUsedVariables('Hello World')).toEqual([]);
         });
     });
 });
