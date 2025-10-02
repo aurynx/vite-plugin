@@ -25,6 +25,14 @@ export default defineConfig({
         dts({
             outDir: 'dist',
             insertTypesEntry: true,
+            tsconfigPath: 'tsconfig.app.json',
+            entryRoot: 'src',
+            exclude: [
+                'test',
+                'test/**/*',
+                '**/*.test.*',
+                '**/__tests__/**'
+            ],
         }),
     ],
     resolve: {
