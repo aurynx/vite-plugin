@@ -1,5 +1,12 @@
 # Changelog
 
+# [0.3.0](https://github.com/aurynx/vite-plugin/compare/v0.2.0...v0.3.0) (2025-10-03)
+
+
+### Features
+
+* **compiler:** add support for named slots in component compilation ([885ed92](https://github.com/aurynx/vite-plugin/commit/885ed926a2daafd56738426ae08be1ebd397985c))
+
 # [0.2.0](https://github.com/aurynx/vite-plugin/compare/v0.1.1...v0.2.0) (2025-10-03)
 
 
