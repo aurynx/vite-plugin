@@ -1,8 +1,7 @@
 # Commit Message Guidelines
 
 This repository is a small Vite plugin. We use Conventional Commits with the angular preset.
-This document is a compact guide for humans and for GitHub Copilot so generated
-commit messages are consistent and work with the release tooling.
+This document is a compact guide for humans and for GitHub Copilot so generated commit messages are consistent and work with the release tooling.
 
 ---
 
@@ -144,6 +143,7 @@ BREAKING CHANGE: `oldOption` was removed. Use `newOption` which is a boolean now
 - If the change is only docs or tests, use `docs(...)` or `test(...)` respectively.
 - When in doubt, a safe generic commit is `chore: describe change`, but try to
   pick a more specific type and scope.
+- When asked to produce a commit message: output ONLY the commit message text (in Conventional Commit format). Do not add explanations, examples, code fences, or any extra text — the assistant's entire output should be the commit message ready to use.
 
 ## Why this matters
 
