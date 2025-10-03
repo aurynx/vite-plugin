@@ -82,11 +82,18 @@ const compileEchos = (template: string): string => {
     const echoPattern = /\{\{\{\s*(.+?)\s*}}}|\{\{\s*(.+?)\s*}}/g;
     return template.replace(echoPattern, (_match: string, raw: string | undefined, escaped: string | undefined): string => {
         const expression = raw ?? escaped;
+        const trimmedExpression = (expression as string).trim();
 
         const compiledExpression = compileDotNotationInExpression(expression as string);
 
+        // Raw output for {{{ }}}
         if (raw) {
             return `<?= ${compiledExpression} ?>`;
+        }
+
+        // Special handling for $slot - it's a Closure, needs to be invoked
+        if (trimmedExpression === '$slot') {
+            return `<?php if (isset($slot)) { echo ($slot)(); } ?>`;
         }
 
         return `<?= htmlspecialchars(${compiledExpression}, ENT_QUOTES, 'UTF-8') ?>`;

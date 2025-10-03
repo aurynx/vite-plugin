@@ -1,70 +1,64 @@
 import { describe, it, expect } from 'vitest';
 import { compile } from '@/compiler';
+import { readTemplate, readExpected } from './helpers/fixtures';
 
 const baseNamespace = 'App\\View\\Components\\';
 
 describe('Aurynx View Compiler', () => {
     it('compiles escaped and raw echo statements', () => {
-        const template = 'Hello, {{ $name }}. Raw: {{{ $raw_html }}}';
-        const expected = "Hello, <?= htmlspecialchars($name, ENT_QUOTES, 'UTF-8') ?>. Raw: <?= $raw_html ?>";
+        const fixtureName = 'echo-statements';
+        const template = readTemplate(fixtureName);
+        const expected = readExpected(fixtureName);
 
         expect(compile(template, baseNamespace)).toBe(expected);
     });
 
     it('compiles dot notation in echos', () => {
-        const template = 'User: {{ $user.name }}';
-        const expected = "User: <?= htmlspecialchars(data_get($user, 'name'), ENT_QUOTES, 'UTF-8') ?>";
+        const fixtureName = 'dot-notation';
+        const template = readTemplate(fixtureName);
+        const expected = readExpected(fixtureName);
 
         expect(compile(template, baseNamespace)).toBe(expected);
     });
 
     it('compiles a simple @each directive', () => {
-        const template = '@each ($users as $user) {{ $user.name }} @endEach';
-        const expected = "<?php foreach ($users as $user): ?> <?= htmlspecialchars(data_get($user, 'name'), ENT_QUOTES, 'UTF-8') ?> <?php endforeach; ?>";
+        const fixtureName = 'each-directive';
+        const template = readTemplate(fixtureName);
+        const expected = readExpected(fixtureName);
 
         expect(compile(template, baseNamespace)).toBe(expected);
     });
 
     it('compiles a simple self-closing component', () => {
-        const template = '<x-alert />';
-        const expected = "<?= component(componentClass: App\\View\\Components\\Alert::class) ?>";
+        const fixtureName = 'self-closing-component';
+        const template = readTemplate(fixtureName);
+        const expected = readExpected(fixtureName);
 
         expect(compile(template, baseNamespace)).toBe(expected);
     });
 
     it('compiles a component with static and dynamic attributes', () => {
-        const template = '<x-card title="Static Title" :post="$post" required />';
-        const expected = "<?= component(componentClass: App\\View\\Components\\Card::class, props: ['title' => 'Static Title', 'post' => $post, 'required' => 'true']) ?>";
+        const fixtureName = 'component-with-attributes';
+        const template = readTemplate(fixtureName);
+        const expected = readExpected(fixtureName);
 
         expect(compile(template, baseNamespace).replace(/\s+/g, ' ')).toBe(expected.replace(/\s+/g, ' '));
     });
 
     it('recursively compiles components inside a slot', () => {
-        const template = '<x-layout><x-card /></x-layout>';
-        const expected = "<?= component(componentClass: App\\View\\Components\\Layout::class, slot: function() { ?><?= component(componentClass: App\\View\\Components\\Card::class) ?><?php }) ?>";
+        const fixtureName = 'recursive-components';
+        const template = readTemplate(fixtureName);
+        const expected = readExpected(fixtureName);
 
         expect(compile(template, baseNamespace)).toBe(expected);
     });
 
     it('compiles deeply nested namespaced components', () => {
-        const template = `
-            <x-layout>
-              <x-card>
-                <x-card.header />
-                <x-card.body />
-                <x-card.footer />
-              </x-card>
-            </x-layout>
-        `;
+        const fixtureName = 'nested-namespaced-components';
+        const template = readTemplate(fixtureName);
+        const expected = readExpected(fixtureName);
 
-        // We use .replace(/\s+/g, ' ') to normalize whitespace for comparison
-        const expected = `
-            <?= component(componentClass: App\\View\\Components\\Layout::class, slot: function() { ?><?= component(componentClass: App\\View\\Components\\Card::class, slot: function() { ?><?= component(componentClass: App\\View\\Components\\Card\\Header::class) ?>
-                    <?= component(componentClass: App\\View\\Components\\Card\\Body::class) ?>
-                    <?= component(componentClass: App\\View\\Components\\Card\\Footer::class) ?><?php }) ?><?php }) ?>
-        `.replace(/\s+/g, ' ');
-
-        expect(compile(template, baseNamespace).replace(/\s+/g, ' ')).toBe(expected);
+        expect(compile(template, baseNamespace).replace(/\s+/g, ' ')).toBe(expected.replace(/\s+/g, ' '));
     });
 
     it('automatically adds a `use` clause for variables inside a slot', () => {
@@ -86,30 +80,27 @@ describe('Aurynx View Compiler', () => {
     });
 
     it('compiles a component with a single named slot', () => {
-        const template = '<x-alert><x-slot:title>Server Error</x-slot></x-alert>';
-        const expected = "<?= component(componentClass: App\\View\\Components\\Alert::class, slots: ['title' => function() { ?>Server Error<?php }]) ?>";
+        const fixtureName = 'single-named-slot';
+        const template = readTemplate(fixtureName);
+        const expected = readExpected(fixtureName);
 
         expect(compile(template, baseNamespace)).toBe(expected);
     });
 
     it('compiles a component with multiple named slots', () => {
-        const template = '<x-alert><x-slot:title>Server Error</x-slot><x-slot:footer>Close</x-slot></x-alert>';
-        const expected = "<?= component(componentClass: App\\View\\Components\\Alert::class, slots: ['title' => function() { ?>Server Error<?php }, 'footer' => function() { ?>Close<?php }]) ?>";
+        const fixtureName = 'multiple-named-slots';
+        const template = readTemplate(fixtureName);
+        const expected = readExpected(fixtureName);
 
         expect(compile(template, baseNamespace)).toBe(expected);
     });
 
     it('compiles a component with named slots and default slot', () => {
-        const template = '<x-alert><x-slot:title>Server Error</x-slot><strong>Whoops!</strong> Something went wrong!</x-alert>';
+        const fixtureName = 'named-and-default-slot';
+        const template = readTemplate(fixtureName);
+        const expected = readExpected(fixtureName);
 
-        const result = compile(template, baseNamespace);
-
-        // Check that it contains the named slot
-        expect(result).toContain("slots: ['title' => function() { ?>Server Error<?php }]");
-
-        // Check that it contains the default slot
-        expect(result).toContain("slot: function() { ?>");
-        expect(result).toContain("<strong>Whoops!</strong> Something went wrong!");
+        expect(compile(template, baseNamespace)).toBe(expected);
     });
 
     it('compiles named slots with variables and adds use clause', () => {
@@ -132,11 +123,26 @@ describe('Aurynx View Compiler', () => {
     });
 
     it('compiles nested components inside named slots', () => {
-        const template = '<x-card><x-slot:header><x-heading /></x-slot>Content here</x-card>';
+        const fixtureName = 'nested-in-named-slot';
+        const template = readTemplate(fixtureName);
+        const expected = readExpected(fixtureName);
 
-        const result = compile(template, baseNamespace);
+        expect(compile(template, baseNamespace)).toBe(expected);
+    });
 
-        // Check that nested component is compiled inside the named slot
-        expect(result).toContain("'header' => function() { ?><?= component(componentClass: App\\View\\Components\\Heading::class) ?><?php }");
+    it('compiles layout component with HTML structure and comments', () => {
+        const fixtureName = 'layout-component';
+        const template = readTemplate(fixtureName);
+        const expected = readExpected(fixtureName);
+
+        expect(compile(template, baseNamespace)).toBe(expected);
+    });
+
+    it('compiles layout component with nested content and components', () => {
+        const fixtureName = 'layout-with-content';
+        const template = readTemplate(fixtureName);
+        const expected = readExpected(fixtureName);
+
+        expect(compile(template, baseNamespace)).toBe(expected);
     });
 });

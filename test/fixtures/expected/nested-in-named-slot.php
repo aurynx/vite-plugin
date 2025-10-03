@@ -1,0 +1,1 @@
+<?= component(componentClass: App\View\Components\Card::class, slots: ['header' => function() { ?><?= component(componentClass: App\View\Components\Heading::class) ?><?php }], slot: function() { ?>Content here<?php }) ?>
