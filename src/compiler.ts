@@ -1,5 +1,22 @@
 import {compileDotNotationInExpression, findUsedVariables, parseAttributes, tagNameToClassName} from '@/helpers';
 
+const extractNamedSlots = (content: string): { namedSlots: Record<string, string>, defaultSlot: string } => {
+    const namedSlots: Record<string, string> = {};
+    const slotRegex = /<x-slot:([a-zA-Z0-9_-]+)>(.*?)<\/x-slot>/sg;
+
+    let defaultSlot = content;
+    let match;
+
+    while ((match = slotRegex.exec(content)) !== null) {
+        const slotName = match[1];
+        namedSlots[slotName] = match[2];
+    }
+
+    defaultSlot = defaultSlot.replace(slotRegex, '');
+
+    return { namedSlots, defaultSlot };
+};
+
 const compileComponents = (template: string, baseNamespace: string): string => {
     const componentRegex = /<x-([a-zA-Z0-9.-]+)((?:\s+[:a-zA-Z0-9-]+(?:=(?:"[^"]*"|'[^']*'))?)*)\s*(?:\/>|>(.*?)<\/x-\1>)/sg;
 
@@ -26,12 +43,31 @@ const compileComponents = (template: string, baseNamespace: string): string => {
         }
 
         if (slotContent && slotContent.trim() !== '') {
-            const usedVariables = findUsedVariables(slotContent);
-            const useClause = usedVariables.length > 0 ? ` use (${usedVariables.join(', ')})` : '';
+            const { namedSlots, defaultSlot } = extractNamedSlots(slotContent);
 
-            const compiledSlot = compile(slotContent, baseNamespace);
-            const slotString = `function()${useClause} { ?>${compiledSlot}<?php }`;
-            callArgs.push(`slot: ${slotString}`);
+            // Handle named slots
+            if (Object.keys(namedSlots).length > 0) {
+                const slotsArray: string[] = [];
+
+                for (const [name, content] of Object.entries(namedSlots)) {
+                    const usedVariables = findUsedVariables(content);
+                    const useClause = usedVariables.length > 0 ? ` use (${usedVariables.join(', ')})` : '';
+                    const compiledContent = compile(content, baseNamespace);
+                    slotsArray.push(`'${name}' => function()${useClause} { ?>${compiledContent}<?php }`);
+                }
+
+                callArgs.push(`slots: [${slotsArray.join(', ')}]`);
+            }
+
+            // Handle default slot
+            const trimmedDefaultSlot = defaultSlot.trim();
+            if (trimmedDefaultSlot !== '') {
+                const usedVariables = findUsedVariables(trimmedDefaultSlot);
+                const useClause = usedVariables.length > 0 ? ` use (${usedVariables.join(', ')})` : '';
+                const compiledSlot = compile(trimmedDefaultSlot, baseNamespace);
+                const slotString = `function()${useClause} { ?>${compiledSlot}<?php }`;
+                callArgs.push(`slot: ${slotString}`);
+            }
         }
 
         return `<?= component(${callArgs.join(', ')}) ?>`;
@@ -56,7 +92,6 @@ const compileEchos = (template: string): string => {
         return `<?= htmlspecialchars(${compiledExpression}, ENT_QUOTES, 'UTF-8') ?>`;
     });
 };
-
 
 const compileIf = (template: string): string => {
     template = template.replace(/@elseif\s*\((.*?)\)/gi, (_match: string, expression: string): string => `<?php elseif (${compileDotNotationInExpression(expression)}): ?>`);

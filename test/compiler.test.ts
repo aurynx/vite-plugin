@@ -57,15 +57,11 @@ describe('Aurynx View Compiler', () => {
             </x-layout>
         `;
 
-        // We use .replace(/\s+/g, '') to make the expected string easier to read and less fragile.
+        // We use .replace(/\s+/g, ' ') to normalize whitespace for comparison
         const expected = `
-            <?= component(componentClass: App\\View\\Components\\Layout::class, slot: function() { ?>
-                <?= component(componentClass: App\\View\\Components\\Card::class, slot: function() { ?>
-                    <?= component(componentClass: App\\View\\Components\\Card\\Header::class) ?>
+            <?= component(componentClass: App\\View\\Components\\Layout::class, slot: function() { ?><?= component(componentClass: App\\View\\Components\\Card::class, slot: function() { ?><?= component(componentClass: App\\View\\Components\\Card\\Header::class) ?>
                     <?= component(componentClass: App\\View\\Components\\Card\\Body::class) ?>
-                    <?= component(componentClass: App\\View\\Components\\Card\\Footer::class) ?>
-                <?php }) ?>
-            <?php }) ?>
+                    <?= component(componentClass: App\\View\\Components\\Card\\Footer::class) ?><?php }) ?><?php }) ?>
         `.replace(/\s+/g, ' ');
 
         expect(compile(template, baseNamespace).replace(/\s+/g, ' ')).toBe(expected);
@@ -87,5 +83,60 @@ describe('Aurynx View Compiler', () => {
         };
 
         expect(normalizeUseClause(compile(template, baseNamespace))).toBe(normalizeUseClause(expected));
+    });
+
+    it('compiles a component with a single named slot', () => {
+        const template = '<x-alert><x-slot:title>Server Error</x-slot></x-alert>';
+        const expected = "<?= component(componentClass: App\\View\\Components\\Alert::class, slots: ['title' => function() { ?>Server Error<?php }]) ?>";
+
+        expect(compile(template, baseNamespace)).toBe(expected);
+    });
+
+    it('compiles a component with multiple named slots', () => {
+        const template = '<x-alert><x-slot:title>Server Error</x-slot><x-slot:footer>Close</x-slot></x-alert>';
+        const expected = "<?= component(componentClass: App\\View\\Components\\Alert::class, slots: ['title' => function() { ?>Server Error<?php }, 'footer' => function() { ?>Close<?php }]) ?>";
+
+        expect(compile(template, baseNamespace)).toBe(expected);
+    });
+
+    it('compiles a component with named slots and default slot', () => {
+        const template = '<x-alert><x-slot:title>Server Error</x-slot><strong>Whoops!</strong> Something went wrong!</x-alert>';
+
+        const result = compile(template, baseNamespace);
+
+        // Check that it contains the named slot
+        expect(result).toContain("slots: ['title' => function() { ?>Server Error<?php }]");
+
+        // Check that it contains the default slot
+        expect(result).toContain("slot: function() { ?>");
+        expect(result).toContain("<strong>Whoops!</strong> Something went wrong!");
+    });
+
+    it('compiles named slots with variables and adds use clause', () => {
+        const template = '<x-alert><x-slot:title>Error: {{ $code }}</x-slot>Message: {{ $message }}</x-alert>';
+
+        const normalizeUseClause = (str: string) => {
+            return str.replace(/use \((.*?)\)/g, (_match, p1) => {
+                const vars = p1.split(', ').sort().join(', ');
+                return `use (${vars})`;
+            });
+        };
+
+        const result = normalizeUseClause(compile(template, baseNamespace));
+
+        // Named slot should have $code in use clause
+        expect(result).toContain("'title' => function() use ($code)");
+
+        // Default slot should have $message in use clause
+        expect(result).toContain("slot: function() use ($message)");
+    });
+
+    it('compiles nested components inside named slots', () => {
+        const template = '<x-card><x-slot:header><x-heading /></x-slot>Content here</x-card>';
+
+        const result = compile(template, baseNamespace);
+
+        // Check that nested component is compiled inside the named slot
+        expect(result).toContain("'header' => function() { ?><?= component(componentClass: App\\View\\Components\\Heading::class) ?><?php }");
     });
 });
