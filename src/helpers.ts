@@ -42,19 +42,35 @@ export const tagNameToClassName = (tagName: string, baseNamespace: string): stri
 };
 
 /**
- * Finds all unique PHP variables used within a string.
+ * Finds all unique PHP variables (e.g., $user, $post) used within a string,
+ * ignoring variables that are defined within the content itself (like in @each).
  * @param content The string content to scan.
  * @returns An array of unique variable names.
  */
 export const findUsedVariables = (content: string): string[] => {
-    // This regex finds all occurrences of PHP variables.
-    const variableRegex = /\$([a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)/g;
-    const matches = content.match(variableRegex);
+    // 1. Find all variables being defined in loops (e.g., `as $user`, `as $key => $value`)
+    // We use a non-greedy match to correctly handle nested loops in the future.
+    const definedVarRegex = /@each\s*\(.*?as\s+(?:(\$[a-zA-Z0-9_]+)\s*=>\s*)?(\$[a-zA-Z0-9_]+)\)/g;
+    const definedVars = new Set<string>();
+    let match;
 
-    if (!matches) {
-        return [];
+    while ((match = definedVarRegex.exec(content)) !== null) {
+        // The key, e.g., $key
+        if (match[1]) {
+            definedVars.add(match[1])
+        }
+
+        // The value, e.g., $user
+        if (match[2]) {
+            definedVars.add(match[2])
+        }
     }
 
-    // Return a unique list of variables.
-    return [...new Set(matches)];
+    // 2. Find all variable usages
+    const usedVarRegex = /\$([a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)/g;
+    const allUsed = content.match(usedVarRegex) ?? [];
+    const uniqueUsed = [...new Set(allUsed)];
+
+    // 3. Filter out the variables that were defined inside the content.
+    return uniqueUsed.filter(variable => !definedVars.has(variable));
 };

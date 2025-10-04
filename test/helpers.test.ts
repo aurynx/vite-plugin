@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {compileDotNotationInExpression, findUsedVariables, parseAttributes, tagNameToClassName} from '@/helpers';
+import { compileDotNotationInExpression, findUsedVariables, parseAttributes, tagNameToClassName } from '@/helpers';
 
 describe('Compiler Helpers', () => {
     describe('parseAttributes', () => {
@@ -66,10 +66,10 @@ describe('Compiler Helpers', () => {
     });
 
     describe('findUsedVariables', () => {
-        it('should find variables inside directive expressions', () => {
-            const content = '@if ($user.isActive && $post) @each ($posts as $post)';
+        it('should ignore variables defined in @each directives', () => {
+            const content = '@if ($user.isActive) @each ($posts as $post)';
 
-            expect(findUsedVariables(content).sort()).toEqual(['$post', '$posts', '$user'].sort());
+            expect(findUsedVariables(content).sort()).toEqual(['$posts', '$user'].sort());
         });
 
         it('should find a single variable', () => {
