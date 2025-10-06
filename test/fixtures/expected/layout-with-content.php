@@ -1,9 +1,5 @@
 <?php
-return static function (): string {
-    ob_start();
-?>
-<?=
-component(
+return static fn(): string => component(
   componentClass: App\View\Components\Layout::class,
   props: ['title' => 'Welcome Page'],
   slot: function() { ?>
@@ -18,8 +14,4 @@ component(
 ?>
     </div>
 <?php },
-)
-?>
-<?php
-    return ob_get_clean();
-};
+);

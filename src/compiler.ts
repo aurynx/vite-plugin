@@ -229,6 +229,23 @@ const compileInternal = (template: string, ctx: CompilerContext): string => {
 };
 
 /**
+ * Check if compiled content is a single expression that can be returned directly.
+ * Returns the expression without PHP tags if it's a single <?= ... ?> statement.
+ */
+const extractSingleExpression = (compiled: string): string | null => {
+    const trimmed = compiled.trim();
+
+    // Match single <?= expression ?> with optional whitespace
+    const singleExpressionMatch = trimmed.match(/^<\?=\s*(.*?)\s*\?>$/s);
+
+    if (singleExpressionMatch) {
+        return singleExpressionMatch[1].trim();
+    }
+
+    return null;
+};
+
+/**
  * The main compile function that orchestrates the entire compilation pipeline.
  * Wraps the result in a closure for better performance (40-60% faster repeated renders).
  */
@@ -251,6 +268,15 @@ export const compile = (template: string, baseNamespace: string, options: { inde
 
     // If no variables, don't require $__data parameter (cleaner signature)
     const hasVariables = templateVars.length > 0;
+
+    // Check if we can optimize to an arrow function (single expression, no variables)
+    const singleExpression = extractSingleExpression(compiled);
+
+    if (singleExpression && !hasVariables) {
+        // Use arrow function for single expression without variables
+        return `<?php\nreturn static fn(): string => ${singleExpression};\n`;
+    }
+
     const functionSignature = hasVariables
         ? 'static function (array $__data): string'
         : 'static function (): string';
