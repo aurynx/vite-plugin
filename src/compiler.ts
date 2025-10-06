@@ -1,4 +1,29 @@
 import {compileDotNotationInExpression, findUsedVariables, parseAttributes, tagNameToClassName, findTemplateVariables, generateVariableAssignments} from '@/helpers';
+import type { CompilerContext } from '@/types';
+
+/**
+ * Format component call with proper indentation.
+ * Only formats with newlines if there's a slot.
+ */
+const formatComponentCall = (callArgs: string[], indent: string, depth: number, hasSlot: boolean): string => {
+    if (callArgs.length === 0) {
+        return 'component()';
+    }
+
+    // Don't format with newlines unless we have slots
+    if (!hasSlot) {
+        return `component(${callArgs.join(', ')})`;
+    }
+
+    // Arguments at depth level (depth=1 -> 2 spaces)
+    const argIndent = indent.repeat(depth);
+    // Closing paren at depth-1 level (depth=1 -> 0 spaces)
+    const closeIndent = indent.repeat(Math.max(0, depth - 1));
+
+    const formattedArgs = callArgs.map(arg => argIndent + arg).join(',\n');
+
+    return `component(\n${formattedArgs}\n${closeIndent})`;
+};
 
 const extractNamedSlots = (content: string): { namedSlots: Record<string, string>, defaultSlot: string } => {
     const namedSlots: Record<string, string> = {};
@@ -35,7 +60,7 @@ const convertToEchoStatements = (compiled: string): string => {
         .replace(/<\?php\s+(.*?)\s*\?>/gs, (_, code) => `\n    ${code.trim()}`);
 };
 
-const compileComponents = (template: string, baseNamespace: string): string => {
+const compileComponents = (template: string, ctx: CompilerContext): string => {
     const componentRegex = /<x-([a-zA-Z0-9.-]+)((?:\s+[:a-zA-Z0-9-]+(?:=(?:"[^"]*"|'[^']*'))?)*)\s*(?:\/>|>(.*?)<\/x-\1>)/sg;
 
     return template.replace(componentRegex, (_match, tagName: string, attrsString: string, slotContent: string | undefined): string => {
@@ -51,7 +76,7 @@ const compileComponents = (template: string, baseNamespace: string): string => {
             }
         }
 
-        const className = tagNameToClassName(tagName, baseNamespace);
+        const className = tagNameToClassName(tagName, ctx.baseNamespace);
         const callArgs: string[] = [];
         callArgs.push(`componentClass: ${className}::class`);
 
@@ -70,7 +95,8 @@ const compileComponents = (template: string, baseNamespace: string): string => {
                 for (const [name, content] of Object.entries(namedSlots)) {
                     const usedVariables = findUsedVariables(content);
                     const useClause = usedVariables.length > 0 ? ` use (${usedVariables.join(', ')})` : '';
-                    const compiledContent = compileInternal(content, baseNamespace);
+                    const nestedCtx: CompilerContext = { ...ctx, currentDepth: ctx.currentDepth + 1 };
+                    const compiledContent = compileInternal(content, nestedCtx);
 
                     // Optimize: if slot contains only PHP (no HTML), use echo instead of ?>...<?php
                     if (isPurePhpContent(compiledContent)) {
@@ -89,13 +115,17 @@ const compileComponents = (template: string, baseNamespace: string): string => {
             if (trimmedDefaultSlot !== '') {
                 const usedVariables = findUsedVariables(trimmedDefaultSlot);
                 const useClause = usedVariables.length > 0 ? ` use (${usedVariables.join(', ')})` : '';
-                // Don't trim - preserve whitespace and newlines from original template
-                const compiledSlot = compileInternal(defaultSlot, baseNamespace);
+                const nestedCtx: CompilerContext = { ...ctx, currentDepth: ctx.currentDepth + 2 };
+                const compiledSlot = compileInternal(defaultSlot, nestedCtx);
 
                 // Optimize: if slot contains only PHP (no HTML), use echo instead of ?>...<?php
                 if (isPurePhpContent(compiledSlot)) {
-                    const phpCode = convertToEchoStatements(compiledSlot);
-                    const slotString = `function()${useClause} {${phpCode}\n}`;
+                    // Format echo statements with proper indentation (inside slot function body)
+                    const echoIndent = ctx.indent.repeat(ctx.currentDepth + 1);
+                    const phpCode = compiledSlot
+                        .replace(/<\?=\s*(.*?)\s*\?>/gs, (_, expr) => `\n${echoIndent}echo ${expr.trim()};`)
+                        .replace(/<\?php\s+(.*?)\s*\?>/gs, (_, code) => `\n${echoIndent}${code.trim()}`);
+                    const slotString = `function()${useClause} {${phpCode}\n${ctx.indent.repeat(ctx.currentDepth)}}`;
                     callArgs.push(`slot: ${slotString}`);
                 } else {
                     const slotString = `function()${useClause} { ?>${compiledSlot}<?php }`;
@@ -104,7 +134,19 @@ const compileComponents = (template: string, baseNamespace: string): string => {
             }
         }
 
-        return `<?= component(${callArgs.join(', ')}) ?>`;
+        // Check if we have any slot (default or named)
+        const hasSlot = callArgs.some(arg =>
+            arg.startsWith('slot: function()') || arg.startsWith('slots: [')
+        );
+
+        const formattedCall = formatComponentCall(callArgs, ctx.indent, ctx.currentDepth, hasSlot);
+
+        // Format with newlines if we have slot
+        if (hasSlot) {
+            return `<?=\n${formattedCall}\n?>`;
+        }
+
+        return `<?= ${formattedCall} ?>`;
     });
 };
 
@@ -168,10 +210,10 @@ const compileFormHelpers = (template: string): string => {
 /**
  * Internal compile function without closure wrapper (used for recursive compilation of slots).
  */
-const compileInternal = (template: string, baseNamespace: string): string => {
+const compileInternal = (template: string, ctx: CompilerContext): string => {
     let compiled: string = template;
 
-    compiled = compileComponents(compiled, baseNamespace);
+    compiled = compileComponents(compiled, ctx);
     compiled = compileComments(compiled);
     compiled = compileEchos(compiled);
     compiled = compileHas(compiled);
@@ -186,15 +228,22 @@ const compileInternal = (template: string, baseNamespace: string): string => {
  * The main compile function that orchestrates the entire compilation pipeline.
  * Wraps the result in a closure for better performance (40-60% faster repeated renders).
  */
-export const compile = (template: string, baseNamespace: string): string => {
+export const compile = (template: string, baseNamespace: string, options: { indent?: string } = {}): string => {
     // Find all variables used in the original template
     const templateVars = findTemplateVariables(template);
 
     // Generate explicit variable assignments
     const varAssignments = generateVariableAssignments(templateVars);
 
+    // Create compiler context
+    const ctx: CompilerContext = {
+        baseNamespace,
+        indent: options.indent ?? '  ', // Default to 2 spaces
+        currentDepth: 1, // Start at depth 1 (inside <?= ?>)
+    };
+
     // Compile the template
-    const compiled = compileInternal(template, baseNamespace);
+    const compiled = compileInternal(template, ctx);
 
     // If no variables, don't require $__data parameter (cleaner signature)
     const hasVariables = templateVars.length > 0;

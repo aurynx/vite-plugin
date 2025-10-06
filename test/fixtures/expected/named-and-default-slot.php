@@ -4,7 +4,13 @@ return static function (): string {
 
     ob_start();
 ?>
-<?= component(componentClass: App\View\Components\Alert::class, slots: ['title' => function() { ?>Server Error<?php }], slot: function() { ?><strong>Whoops!</strong> Something went wrong!<?php }) ?>
+<?=
+component(
+  componentClass: App\View\Components\Alert::class,
+  slots: ['title' => function() { ?>Server Error<?php }],
+  slot: function() { ?><strong>Whoops!</strong> Something went wrong!<?php }
+)
+?>
 <?php
     return ob_get_clean();
 };
