@@ -246,6 +246,94 @@ const extractSingleExpression = (compiled: string): string | null => {
 };
 
 /**
+ * Escape string for PHP single-quoted strings.
+ * Converts special characters to their escape sequences.
+ */
+const escapePhpString = (str: string): string => {
+    return str
+        .replace(/\\/g, '\\\\')  // Backslash first
+        .replace(/'/g, "\\'")     // Single quotes
+        .replace(/\n/g, '\\n')    // Newlines
+        .replace(/\r/g, '\\r')    // Carriage returns
+        .replace(/\t/g, '\\t');   // Tabs
+};
+
+/**
+ * Check if compiled content can be optimized to string concatenation.
+ * Returns true if content only contains <?= ... ?> tags (no control structures).
+ */
+const canOptimizeToStringConcatenation = (compiled: string): boolean => {
+    const trimmed = compiled.trim();
+
+    // Empty content
+    if (!trimmed) {
+        return false;
+    }
+
+    // Check if there are any <?php tags (excluding comments)
+    // We want to avoid content with control structures like if/foreach
+    const phpTags = trimmed.match(/<\?php\s+(?!\/\*)/g);
+    if (phpTags && phpTags.length > 0) {
+        return false;
+    }
+
+    // Must have at least one <?= tag or be pure text
+    return true;
+};
+
+/**
+ * Convert compiled content with <?= ... ?> tags to string concatenation.
+ * Example: "Hello <?= $name ?>" -> "'Hello ' . $name"
+ */
+const convertToStringConcatenation = (compiled: string): string => {
+    const parts: string[] = [];
+    let lastIndex = 0;
+
+    // Find all <?= ... ?> tags
+    const echoRegex = /<\?=\s*(.*?)\s*\?>/gs;
+    let match;
+
+    while ((match = echoRegex.exec(compiled)) !== null) {
+        const expression = match[1].trim();
+        const offset = match.index;
+
+        // Add static text before this expression
+        if (offset > lastIndex) {
+            const staticText = compiled.substring(lastIndex, offset);
+            if (staticText) {
+                parts.push(`'${escapePhpString(staticText)}'`);
+            }
+        }
+
+        // Add the expression (with proper casting to string)
+        parts.push(`(${expression})`);
+
+        lastIndex = offset + match[0].length;
+    }
+
+    // Add remaining static text
+    if (lastIndex < compiled.length) {
+        const staticText = compiled.substring(lastIndex);
+        if (staticText) {
+            parts.push(`'${escapePhpString(staticText)}'`);
+        }
+    }
+
+    // If no parts, return empty string
+    if (parts.length === 0) {
+        return "''";
+    }
+
+    // If single part and it's not a string literal, return it directly
+    if (parts.length === 1 && !parts[0].startsWith("'")) {
+        return parts[0];
+    }
+
+    // Join with concatenation operator
+    return parts.join(' . ');
+};
+
+/**
  * The main compile function that orchestrates the entire compilation pipeline.
  * Wraps the result in a closure for better performance (40-60% faster repeated renders).
  */
@@ -274,7 +362,36 @@ export const compile = (template: string, baseNamespace: string, options: { inde
 
     if (singleExpression && !hasVariables) {
         // Use arrow function for single expression without variables
-        return `<?php\nreturn static fn(): string => ${singleExpression};\n`;
+        return `<?php\n\ndeclare(strict_types=1);\n\nreturn static fn(): string => ${singleExpression};\n`;
+    }
+
+    // Check if we can optimize to string concatenation (no control structures)
+    if (canOptimizeToStringConcatenation(compiled)) {
+        const concatenated = convertToStringConcatenation(compiled);
+
+        const functionSignature = hasVariables
+            ? 'static function (array $__data): string'
+            : 'static function (): string';
+
+        if (hasVariables) {
+            return `<?php
+
+declare(strict_types=1);
+
+return ${functionSignature} {
+${varAssignments}    return ${concatenated};
+};
+`;
+        } else {
+            return `<?php
+
+declare(strict_types=1);
+
+return ${functionSignature} {
+    return ${concatenated};
+};
+`;
+        }
     }
 
     const functionSignature = hasVariables
@@ -284,6 +401,9 @@ export const compile = (template: string, baseNamespace: string, options: { inde
     // Wrap in closure with explicit variable extraction (10-15% faster than extract())
     if (hasVariables) {
         return `<?php
+
+declare(strict_types=1);
+
 return ${functionSignature} {
 ${varAssignments}    ob_start();
 ?>
@@ -293,6 +413,9 @@ ${compiled}<?php
 `;
     } else {
         return `<?php
+
+declare(strict_types=1);
+
 return ${functionSignature} {
     ob_start();
 ?>

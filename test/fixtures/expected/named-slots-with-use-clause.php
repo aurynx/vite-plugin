@@ -1,4 +1,7 @@
 <?php
+
+declare(strict_types=1);
+
 return static function (array $__data): string {
     $code = $__data['code'] ?? null;
     $message = $__data['message'] ?? null;

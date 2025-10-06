@@ -1,4 +1,7 @@
 <?php
+
+declare(strict_types=1);
+
 return static function (array $__data): string {
     $items = $__data['items'] ?? null;
     $title = $__data['title'] ?? null;

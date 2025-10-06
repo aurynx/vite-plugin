@@ -1,4 +1,7 @@
 <?php
+
+declare(strict_types=1);
+
 return static fn(): string => component(
   componentClass: App\View\Components\Layout::class,
   props: ['title' => 'Welcome Page'],
