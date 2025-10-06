@@ -103,12 +103,12 @@ export const findTemplateVariables = (template: string): string[] => {
  */
 export const generateVariableAssignments = (variables: string[]): string => {
     if (variables.length === 0) {
-        return '    // No variables used\n';
+        return '    // No variables used\n\n';
     }
 
     return variables
         .map(varName => `    $${varName} = $__data['${varName}'] ?? null;`)
-        .join('\n') + '\n';
+        .join('\n') + '\n\n';
 };
 
 /**

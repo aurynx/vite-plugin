@@ -59,12 +59,13 @@ const compileComponents = (template: string, baseNamespace: string): string => {
                 callArgs.push(`slots: [${slotsArray.join(', ')}]`);
             }
 
-            // Handle default slot
+            // Handle default slot - preserve original formatting
             const trimmedDefaultSlot = defaultSlot.trim();
             if (trimmedDefaultSlot !== '') {
                 const usedVariables = findUsedVariables(trimmedDefaultSlot);
                 const useClause = usedVariables.length > 0 ? ` use (${usedVariables.join(', ')})` : '';
-                const compiledSlot = compileInternal(trimmedDefaultSlot, baseNamespace);
+                // Don't trim - preserve whitespace and newlines from original template
+                const compiledSlot = compileInternal(defaultSlot, baseNamespace);
                 const slotString = `function()${useClause} { ?>${compiledSlot}<?php }`;
                 callArgs.push(`slot: ${slotString}`);
             }
@@ -164,11 +165,10 @@ export const compile = (template: string, baseNamespace: string): string => {
 
     // Wrap in closure with explicit variable extraction (10-15% faster than extract())
     return `<?php
-return static function(array $__data): string {
-${varAssignments}
-    ob_start();
-    ?>
-${compiled}    <?php
+return static function (array $__data): string {
+${varAssignments}    ob_start();
+?>
+${compiled}<?php
     return ob_get_clean();
 };
 `;

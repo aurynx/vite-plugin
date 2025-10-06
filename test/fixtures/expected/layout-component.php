@@ -1,9 +1,9 @@
 <?php
-return static function(array $__data): string {
+return static function (array $__data): string {
     $title = $__data['title'] ?? null;
 
     ob_start();
-    ?>
+?>
 <!DOCTYPE html>
 <html lang="ru">
     <head>
@@ -28,6 +28,6 @@ return static function(array $__data): string {
         </footer>
     </body>
 </html>
-    <?php
+<?php
     return ob_get_clean();
 };
