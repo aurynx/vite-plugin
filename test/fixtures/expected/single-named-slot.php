@@ -1,7 +1,5 @@
 <?php
 return static function (): string {
-    // No variables used
-
     ob_start();
 ?>
 <?=

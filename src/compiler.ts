@@ -256,7 +256,8 @@ export const compile = (template: string, baseNamespace: string, options: { inde
         : 'static function (): string';
 
     // Wrap in closure with explicit variable extraction (10-15% faster than extract())
-    return `<?php
+    if (hasVariables) {
+        return `<?php
 return ${functionSignature} {
 ${varAssignments}    ob_start();
 ?>
@@ -264,4 +265,14 @@ ${compiled}<?php
     return ob_get_clean();
 };
 `;
+    } else {
+        return `<?php
+return ${functionSignature} {
+    ob_start();
+?>
+${compiled}<?php
+    return ob_get_clean();
+};
+`;
+    }
 };
