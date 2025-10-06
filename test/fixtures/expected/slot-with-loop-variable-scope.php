@@ -1,6 +1,8 @@
 <?php
 return static function(array $__data): string {
-    extract($__data, EXTR_SKIP);
+    $items = $__data['items'] ?? null;
+    $title = $__data['title'] ?? null;
+
     ob_start();
     ?>
 <?= component(componentClass: App\View\Components\Container::class, slot: function() use ($items, $title) { ?>

@@ -42,6 +42,76 @@ export const tagNameToClassName = (tagName: string, baseNamespace: string): stri
 };
 
 /**
+ * Finds all unique PHP variables used in the original Aurynx template.
+ * Scans before compilation to extract variables for explicit assignment generation.
+ * @param template The raw Aurynx template string.
+ * @returns An array of unique variable names (without $ prefix).
+ */
+export const findTemplateVariables = (template: string): string[] => {
+    const vars = new Set<string>();
+
+    // Pattern 1: {{ $variable }} and {{{ $variable }}}
+    const echoRegex = /\{\{\{?\s*\$([a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)/g;
+    let match;
+    while ((match = echoRegex.exec(template)) !== null) {
+        vars.add(match[1]);
+    }
+
+    // Pattern 2: @if($variable), @elseif($variable)
+    const conditionalRegex = /@(?:if|elseif)\s*\(\s*\$([a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)/g;
+    while ((match = conditionalRegex.exec(template)) !== null) {
+        vars.add(match[1]);
+    }
+
+    // Pattern 3: @each($items as $item) - extract collection variable only, exclude loop variable
+    const eachRegex = /@each\s*\(\s*\$([a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)\s+as\s+(?:\$[a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*(?:\s*=>\s*)?)?\$([a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)\)/g;
+    const loopVars = new Set<string>();
+    while ((match = eachRegex.exec(template)) !== null) {
+        vars.add(match[1]); // Add collection variable (e.g., $users)
+        loopVars.add(match[2]); // Track loop variable to exclude (e.g., $user)
+    }
+
+    // Pattern 4: Component props :prop="$variable" or :prop="'string $variable'"
+    const propRegex = /:\s*[a-zA-Z0-9_-]+\s*=\s*["'][^"']*\$([a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)/g;
+    while ((match = propRegex.exec(template)) !== null) {
+        vars.add(match[1]);
+    }
+
+    // Pattern 5: Inside PHP expressions within {{ }} - like $user->name, $items[0]
+    const dotNotationRegex = /\$([a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)(?:->|\[|\.)/g;
+    while ((match = dotNotationRegex.exec(template)) !== null) {
+        vars.add(match[1]);
+    }
+
+    // Pattern 6: Plain PHP code <?= $variable ?> or <?php $variable ?>
+    const phpCodeRegex = /<\?(?:=|php)\s+[^?]*?\$([a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)/g;
+    while ((match = phpCodeRegex.exec(template)) !== null) {
+        vars.add(match[1]);
+    }
+
+    // Exclude special internal variables and loop variables
+    const excludeVars = ['slot', '__data', '__path'];
+    const filtered = Array.from(vars).filter(v => !excludeVars.includes(v) && !loopVars.has(v));
+
+    return filtered.sort(); // Sort for consistent output
+};
+
+/**
+ * Generates PHP code for explicit variable assignments from $__data array.
+ * @param variables Array of variable names (without $ prefix).
+ * @returns PHP code string with variable assignments.
+ */
+export const generateVariableAssignments = (variables: string[]): string => {
+    if (variables.length === 0) {
+        return '    // No variables used\n';
+    }
+
+    return variables
+        .map(varName => `    $${varName} = $__data['${varName}'] ?? null;`)
+        .join('\n') + '\n';
+};
+
+/**
  * Finds all unique PHP variables (e.g., $user, $post) used within a string,
  * ignoring variables that are defined within the content itself (like in @each).
  * @param content The string content to scan.

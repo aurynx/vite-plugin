@@ -1,6 +1,7 @@
 <?php
 return static function(array $__data): string {
-    extract($__data, EXTR_SKIP);
+    $user = $__data['user'] ?? null;
+
     ob_start();
     ?>
 User: <?= htmlspecialchars(data_get($user, 'name'), ENT_QUOTES, 'UTF-8') ?>

@@ -1,6 +1,7 @@
 <?php
 return static function(array $__data): string {
-    extract($__data, EXTR_SKIP);
+    // No variables used
+
     ob_start();
     ?>
 <?= component(componentClass: App\View\Components\Layout::class, props: ['title' => 'Welcome Page'], slot: function() { ?><div class="container">

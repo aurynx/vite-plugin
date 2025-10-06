@@ -1,6 +1,7 @@
 <?php
 return static function(array $__data): string {
-    extract($__data, EXTR_SKIP);
+    $title = $__data['title'] ?? null;
+
     ob_start();
     ?>
 <!DOCTYPE html>
