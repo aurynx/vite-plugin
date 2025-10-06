@@ -20,7 +20,8 @@ const formatComponentCall = (callArgs: string[], indent: string, depth: number, 
     // Closing paren at depth-1 level (depth=1 -> 0 spaces)
     const closeIndent = indent.repeat(Math.max(0, depth - 1));
 
-    const formattedArgs = callArgs.map(arg => argIndent + arg).join(',\n');
+    // Add trailing comma to each argument
+    const formattedArgs = callArgs.map(arg => argIndent + arg + ',').join('\n');
 
     return `component(\n${formattedArgs}\n${closeIndent})`;
 };
@@ -91,6 +92,7 @@ const compileComponents = (template: string, ctx: CompilerContext): string => {
             // Handle named slots
             if (Object.keys(namedSlots).length > 0) {
                 const slotsArray: string[] = [];
+                const slotIndent = ctx.indent.repeat(ctx.currentDepth + 1);
 
                 for (const [name, content] of Object.entries(namedSlots)) {
                     const usedVariables = findUsedVariables(content);
@@ -107,7 +109,9 @@ const compileComponents = (template: string, ctx: CompilerContext): string => {
                     }
                 }
 
-                callArgs.push(`slots: [${slotsArray.join(', ')}]`);
+                // Format slots array with multiple lines and proper indentation
+                const formattedSlots = slotsArray.map(slot => `${slotIndent}${slot}`).join(',\n');
+                callArgs.push(`slots: [\n${formattedSlots}\n${ctx.indent.repeat(ctx.currentDepth)}]`);
             }
 
             // Handle default slot - preserve original formatting

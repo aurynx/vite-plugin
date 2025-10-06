@@ -15,11 +15,11 @@ component(
         <?=
 component(
       componentClass: App\View\Components\Button::class,
-      slot: function() { ?>Shop Now<?php }
+      slot: function() { ?>Shop Now<?php },
     )
 ?>
     </div>
-<?php }
+<?php },
 )
 ?>
 <?php

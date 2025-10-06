@@ -7,7 +7,10 @@ return static function (): string {
 <?=
 component(
   componentClass: App\View\Components\Alert::class,
-  slots: ['title' => function() { ?>Server Error<?php }, 'footer' => function() { ?>Close<?php }]
+  slots: [
+    'title' => function() { ?>Server Error<?php },
+    'footer' => function() { ?>Close<?php }
+  ],
 )
 ?>
 <?php

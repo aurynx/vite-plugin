@@ -7,10 +7,12 @@ return static function (): string {
 <?=
 component(
   componentClass: App\View\Components\Card::class,
-  slots: ['header' => function() {
+  slots: [
+    'header' => function() {
     echo component(componentClass: App\View\Components\Heading::class);
-    }],
-  slot: function() { ?>Content here<?php }
+    }
+  ],
+  slot: function() { ?>Content here<?php },
 )
 ?>
 <?php
