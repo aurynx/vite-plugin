@@ -1,5 +1,12 @@
 # Changelog
 
+# [0.4.0](https://github.com/aurynx/vite-plugin/compare/v0.3.1...v0.4.0) (2025-10-06)
+
+
+### Features
+
+* **compiler:** wrap compiled templates in closures ([37548b2](https://github.com/aurynx/vite-plugin/commit/37548b21699483e188359e34fda622f014a7cd4e))
+
 # [1.0.0](https://github.com/aurynx/vite-plugin/compare/v0.3.1...v1.0.0) (2025-10-06)
 
 
