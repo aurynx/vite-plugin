@@ -1,3 +1,8 @@
+<?php
+return static function(array $__data): string {
+    extract($__data, EXTR_SKIP);
+    ob_start();
+    ?>
 <!DOCTYPE html>
 <html lang="ru">
     <head>
@@ -22,3 +27,6 @@
         </footer>
     </body>
 </html>
+    <?php
+    return ob_get_clean();
+};
