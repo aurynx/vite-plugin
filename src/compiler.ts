@@ -17,6 +17,24 @@ const extractNamedSlots = (content: string): { namedSlots: Record<string, string
     return { namedSlots, defaultSlot };
 };
 
+/**
+ * Check if compiled content contains only PHP tags without plain HTML between them.
+ */
+const isPurePhpContent = (compiled: string): boolean => {
+    // Remove all PHP tags and check if anything (except whitespace) remains
+    const withoutPhpTags = compiled.replace(/<\?(?:php|=)[\s\S]*?\?>/g, '');
+    return withoutPhpTags.trim() === '';
+};
+
+/**
+ * Convert compiled PHP content with <?= ... ?> tags to pure PHP echo statements.
+ */
+const convertToEchoStatements = (compiled: string): string => {
+    return compiled
+        .replace(/<\?=\s*(.*?)\s*\?>/gs, (_, expr) => `\n    echo ${expr.trim()};`)
+        .replace(/<\?php\s+(.*?)\s*\?>/gs, (_, code) => `\n    ${code.trim()}`);
+};
+
 const compileComponents = (template: string, baseNamespace: string): string => {
     const componentRegex = /<x-([a-zA-Z0-9.-]+)((?:\s+[:a-zA-Z0-9-]+(?:=(?:"[^"]*"|'[^']*'))?)*)\s*(?:\/>|>(.*?)<\/x-\1>)/sg;
 
@@ -53,7 +71,14 @@ const compileComponents = (template: string, baseNamespace: string): string => {
                     const usedVariables = findUsedVariables(content);
                     const useClause = usedVariables.length > 0 ? ` use (${usedVariables.join(', ')})` : '';
                     const compiledContent = compileInternal(content, baseNamespace);
-                    slotsArray.push(`'${name}' => function()${useClause} { ?>${compiledContent}<?php }`);
+
+                    // Optimize: if slot contains only PHP (no HTML), use echo instead of ?>...<?php
+                    if (isPurePhpContent(compiledContent)) {
+                        const phpCode = convertToEchoStatements(compiledContent);
+                        slotsArray.push(`'${name}' => function()${useClause} {${phpCode}\n    }`);
+                    } else {
+                        slotsArray.push(`'${name}' => function()${useClause} { ?>${compiledContent}<?php }`);
+                    }
                 }
 
                 callArgs.push(`slots: [${slotsArray.join(', ')}]`);
@@ -66,8 +91,16 @@ const compileComponents = (template: string, baseNamespace: string): string => {
                 const useClause = usedVariables.length > 0 ? ` use (${usedVariables.join(', ')})` : '';
                 // Don't trim - preserve whitespace and newlines from original template
                 const compiledSlot = compileInternal(defaultSlot, baseNamespace);
-                const slotString = `function()${useClause} { ?>${compiledSlot}<?php }`;
-                callArgs.push(`slot: ${slotString}`);
+
+                // Optimize: if slot contains only PHP (no HTML), use echo instead of ?>...<?php
+                if (isPurePhpContent(compiledSlot)) {
+                    const phpCode = convertToEchoStatements(compiledSlot);
+                    const slotString = `function()${useClause} {${phpCode}\n}`;
+                    callArgs.push(`slot: ${slotString}`);
+                } else {
+                    const slotString = `function()${useClause} { ?>${compiledSlot}<?php }`;
+                    callArgs.push(`slot: ${slotString}`);
+                }
             }
         }
 
