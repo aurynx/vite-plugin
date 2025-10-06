@@ -1,5 +1,5 @@
 <?php
-return static function (array $__data): string {
+return static function (): string {
     // No variables used
 
     ob_start();

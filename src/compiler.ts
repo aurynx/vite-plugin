@@ -163,9 +163,15 @@ export const compile = (template: string, baseNamespace: string): string => {
     // Compile the template
     const compiled = compileInternal(template, baseNamespace);
 
+    // If no variables, don't require $__data parameter (cleaner signature)
+    const hasVariables = templateVars.length > 0;
+    const functionSignature = hasVariables
+        ? 'static function (array $__data): string'
+        : 'static function (): string';
+
     // Wrap in closure with explicit variable extraction (10-15% faster than extract())
     return `<?php
-return static function (array $__data): string {
+return ${functionSignature} {
 ${varAssignments}    ob_start();
 ?>
 ${compiled}<?php
