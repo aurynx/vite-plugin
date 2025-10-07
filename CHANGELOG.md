@@ -1,5 +1,12 @@
 # Changelog
 
+# [0.10.0](https://github.com/aurynx/vite-plugin/compare/v0.9.0...v0.10.0) (2025-10-07)
+
+
+### Features
+
+* **plugin:** add safeExpression method and improve PHP expression handling ([e8160ca](https://github.com/aurynx/vite-plugin/commit/e8160ca617cbec24a2aeb27b8d0111633854186d))
+
 # [0.9.0](https://github.com/aurynx/vite-plugin/compare/v0.8.0...v0.9.0) (2025-10-07)
 
 
