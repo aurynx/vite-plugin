@@ -171,4 +171,22 @@ describe('PHP Builder', () => {
         expect(assignment).toMatch(/^<\?php/);
         expect(assignment).toMatch(/\?>$/);
     });
+
+    it('generates foreach opening tag', () => {
+        const builder = createPhpBuilder();
+        const foreachOpen = builder.foreachOpen('$users', '$user');
+
+        expect(foreachOpen).toBe('<?php foreach ($users as $user): ?>');
+        expect(foreachOpen).toMatch(/^<\?php/);
+        expect(foreachOpen).toMatch(/\?>$/);
+    });
+
+    it('generates foreach closing tag', () => {
+        const builder = createPhpBuilder();
+        const foreachClose = builder.foreachClose();
+
+        expect(foreachClose).toBe('<?php endforeach; ?>');
+        expect(foreachClose).toMatch(/^<\?php/);
+        expect(foreachClose).toMatch(/\?>$/);
+    });
 });

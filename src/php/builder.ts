@@ -127,6 +127,20 @@ export class PhpBuilder {
     }
 
     /**
+     * Creates a foreach opening tag: <?php foreach ($array as $item): ?>
+     */
+    foreachOpen(array: string, item: string): string {
+        return `${phpSyntax.tags.open} foreach (${array} as ${item}): ${phpSyntax.tags.close}`;
+    }
+
+    /**
+     * Creates a foreach closing tag: <?php endforeach; ?>
+     */
+    foreachClose(): string {
+        return `${phpSyntax.tags.open} endforeach; ${phpSyntax.tags.close}`;
+    }
+
+    /**
      * Adds a blank line for spacing.
      */
     emptyLine(): this {

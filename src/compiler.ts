@@ -220,11 +220,11 @@ const applyDataGetOptimizations = (compiled: string): string => {
         if (loopVarCalls.size > 0) {
             // Optimize data_get calls for loop variable inside the loop
             const foreachStartTag = loop.fullMatch.match(/<\?php\s+foreach\s*\([^)]+\)\s*:\s*\?>/)?.[0] || '';
-            const foreachEndTag = '<?php endforeach; ?>';
+            const builder = createPhpBuilder();
+            const foreachEndTag = builder.foreachClose();
 
             let loopContent = loop.content;
             const assignments: string[] = [];
-            const builder = createPhpBuilder();
 
             for (const [fullCall, info] of loopVarCalls.entries()) {
                 const optimizedVar = generateDataGetVarName(info.variable, info.path);
