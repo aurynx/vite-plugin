@@ -138,4 +138,37 @@ describe('PHP Builder', () => {
         expect(result).toContain("props: ['title' => 'Welcome']");
         expect(result).toContain('slot: function() { ?>Hello<?php }');
     });
+
+    it('resets the builder state', () => {
+        const builder = new PhpBuilder();
+        builder.openTag().strictTypes();
+        expect(builder.build()).not.toBe('');
+
+        builder.reset();
+        expect(builder.build()).toBe('');
+    });
+
+    it('generates PHP statement block', () => {
+        const builder = createPhpBuilder();
+        const statement = builder.phpStatement('echo "Hello"');
+
+        expect(statement).toBe('<?php echo "Hello"; ?>');
+    });
+
+    it('generates variable assignment', () => {
+        const builder = createPhpBuilder();
+        const assignment = builder.variableAssignment('$user', 'getUserData()');
+
+        expect(assignment).toBe('<?php $user = getUserData(); ?>');
+    });
+
+    it('generates variable assignment with data_get', () => {
+        const builder = createPhpBuilder();
+        const assignment = builder.variableAssignment('$__user_name', 'data_get($user, \'name\')');
+
+        expect(assignment).toBe('<?php $__user_name = data_get($user, \'name\'); ?>');
+        // Verify it contains PHP tags
+        expect(assignment).toMatch(/^<\?php/);
+        expect(assignment).toMatch(/\?>$/);
+    });
 });

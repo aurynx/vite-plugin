@@ -113,6 +113,20 @@ export class PhpBuilder {
     }
 
     /**
+     * Creates a PHP statement block: <?php statement; ?>
+     */
+    phpStatement(statement: string): string {
+        return `${phpSyntax.tags.open} ${statement}; ${phpSyntax.tags.close}`;
+    }
+
+    /**
+     * Creates a variable assignment in a PHP block: <?php $var = value; ?>
+     */
+    variableAssignment(varName: string, value: string): string {
+        return this.phpStatement(`${varName} = ${value}`);
+    }
+
+    /**
      * Adds a blank line for spacing.
      */
     emptyLine(): this {

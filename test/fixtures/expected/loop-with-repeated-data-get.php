@@ -15,8 +15,8 @@ return static function (array $__data): string {
     <?php if (!empty($users)): ?>
     <div class="user-grid">
         <?php foreach ($users as $user): ?>
-    $__user_status = data_get($user, 'status');
-    $__user_name = data_get($user, 'name');
+<?php $__user_status = data_get($user, 'status'); ?>
+<?php $__user_name = data_get($user, 'name'); ?>
         <div class="user-card">
             <?php if ($__user_status === 'active'): ?>
             <strong class="status--active"><?= htmlspecialchars($__user_name, ENT_QUOTES, 'UTF-8') ?></strong>

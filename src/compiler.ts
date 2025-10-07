@@ -224,10 +224,12 @@ const applyDataGetOptimizations = (compiled: string): string => {
 
             let loopContent = loop.content;
             const assignments: string[] = [];
+            const builder = createPhpBuilder();
 
             for (const [fullCall, info] of loopVarCalls.entries()) {
                 const optimizedVar = generateDataGetVarName(info.variable, info.path);
-                assignments.push(`    ${optimizedVar} = ${fullCall};`);
+                // Use PhpBuilder to generate variable assignments
+                assignments.push(builder.variableAssignment(optimizedVar, fullCall));
 
                 // Replace in loop content
                 const escapedCall = fullCall.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
