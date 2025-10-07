@@ -44,23 +44,7 @@
 ### Features
 
 * **compiler:** wrap compiled templates in closures ([37548b2](https://github.com/aurynx/vite-plugin/commit/37548b21699483e188359e34fda622f014a7cd4e))
-
-# [1.0.0](https://github.com/aurynx/vite-plugin/compare/v0.3.1...v1.0.0) (2025-10-06)
-
-
-### Features
-
 * **compiler:** wrap compiled templates in closures for runtime optimization ([16f69e7](https://github.com/aurynx/vite-plugin/commit/16f69e70e6f9681b722a743cfb075bee73d1fd71))
-
-
-### BREAKING CHANGES
-
-* **compiler:** compiled template format changed from plain PHP to
-closure-returning files. ViewFactory must support callable renderers.
-
-Signed-off-by: Anton Semenov <anton.a.semenov@proton.me>
-
-## [0.3.1](https://github.com/aurynx/vite-plugin/compare/v0.3.0...v0.3.1) (2025-10-04)
 
 # [0.3.0](https://github.com/aurynx/vite-plugin/compare/v0.2.0...v0.3.0) (2025-10-03)
 
