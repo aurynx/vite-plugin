@@ -1,5 +1,12 @@
 # Changelog
 
+# [0.8.0](https://github.com/aurynx/vite-plugin/compare/v0.7.0...v0.8.0) (2025-10-07)
+
+
+### Features
+
+* **compiler:** add PHP statement and variable assignment methods ([d931ddb](https://github.com/aurynx/vite-plugin/commit/d931ddba8e9858dc42934d0d7d0198f49ed623b2))
+
 # [0.7.0](https://github.com/aurynx/vite-plugin/compare/v0.6.0...v0.7.0) (2025-10-07)
 
 
