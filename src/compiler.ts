@@ -127,15 +127,41 @@ const convertToEchoStatements = (compiled: string): string => {
 };
 
 /**
- * Find all data_get() calls in compiled code and return them with their frequency.
- * Returns a map of data_get signature -> count
+ * Extract all foreach loops from compiled code with their loop variables and content.
  */
-const findDataGetCalls = (compiled: string): Map<string, { variable: string; path: string; count: number }> => {
+const extractForeachLoops = (compiled: string): Array<{
+    fullMatch: string;
+    loopVar: string;
+    content: string;
+    startIndex: number;
+    endIndex: number;
+}> => {
+    const loops: Array<{ fullMatch: string; loopVar: string; content: string; startIndex: number; endIndex: number }> = [];
+    const foreachRegex = /<\?php\s+foreach\s*\([^)]+as\s+(\$[a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)\s*\)\s*:\s*\?>(.*?)<\?php\s+endforeach;\s*\?>/gs;
+
+    let match;
+    while ((match = foreachRegex.exec(compiled)) !== null) {
+        loops.push({
+            fullMatch: match[0],
+            loopVar: match[1],
+            content: match[2],
+            startIndex: match.index,
+            endIndex: match.index + match[0].length
+        });
+    }
+
+    return loops;
+};
+
+/**
+ * Find all data_get() calls in a code section and return them with their frequency.
+ */
+const findDataGetCalls = (code: string): Map<string, { variable: string; path: string; count: number }> => {
     const dataGetRegex = /data_get\(\s*(\$[a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)\s*,\s*'([^']+)'\s*\)/g;
     const calls = new Map<string, { variable: string; path: string; count: number }>();
 
     let match;
-    while ((match = dataGetRegex.exec(compiled)) !== null) {
+    while ((match = dataGetRegex.exec(code)) !== null) {
         const fullCall = match[0];
         const variable = match[1];
         const path = match[2];
@@ -152,7 +178,7 @@ const findDataGetCalls = (compiled: string): Map<string, { variable: string; pat
 
 /**
  * Generate optimized variable names for data_get calls.
- * Example: data_get($cart, 'items') -> $__cart_items
+ * Example: data_get($user, 'name') -> $__user_name
  */
 const generateDataGetVarName = (variable: string, path: string): string => {
     const varName = variable.replace('$', '');
@@ -160,40 +186,64 @@ const generateDataGetVarName = (variable: string, path: string): string => {
     return `$__${varName}_${pathParts}`;
 };
 
-/**
- * Generate variable assignments for repeated data_get() calls.
- * Only creates variables for calls that appear more than once.
- */
-const generateDataGetOptimizations = (compiled: string): { assignments: string; replacements: Map<string, string> } => {
-    const calls = findDataGetCalls(compiled);
-    const replacements = new Map<string, string>();
-    const assignments: string[] = [];
 
-    for (const [fullCall, info] of calls.entries()) {
-        // Only optimize if called more than once
-        if (info.count > 1) {
-            const optimizedVar = generateDataGetVarName(info.variable, info.path);
-            replacements.set(fullCall, optimizedVar);
-            assignments.push(`    ${optimizedVar} = ${fullCall};`);
-        }
+/**
+ * Apply data_get optimizations to compiled code, respecting foreach loop boundaries.
+ * Variables used within foreach loops are optimized inside the loop, not at the top level.
+ */
+const applyDataGetOptimizations = (compiled: string): string => {
+    const loops = extractForeachLoops(compiled);
+
+    if (loops.length === 0) {
+        // No loops - optimize globally at top level (will be handled by caller)
+        return compiled;
     }
 
-    return {
-        assignments: assignments.length > 0 ? assignments.join('\n') + '\n' : '',
-        replacements
-    };
-};
-
-/**
- * Replace repeated data_get() calls with optimized variables.
- */
-const applyDataGetOptimizations = (compiled: string, replacements: Map<string, string>): string => {
     let optimized = compiled;
+    let offset = 0;
 
-    for (const [fullCall, optimizedVar] of replacements.entries()) {
-        // Escape special regex characters in the full call
-        const escapedCall = fullCall.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        optimized = optimized.replace(new RegExp(escapedCall, 'g'), optimizedVar);
+    // Process loops from end to start to maintain correct indices
+    for (let i = loops.length - 1; i >= 0; i--) {
+        const loop = loops[i];
+        const loopVar = loop.loopVar;
+
+        // Find data_get() calls that use the loop variable
+        const loopCalls = findDataGetCalls(loop.content);
+        const loopVarCalls = new Map<string, { variable: string; path: string; count: number }>();
+
+        for (const [fullCall, info] of loopCalls.entries()) {
+            if (info.variable === loopVar && info.count > 1) {
+                loopVarCalls.set(fullCall, info);
+            }
+        }
+
+        if (loopVarCalls.size > 0) {
+            // Optimize data_get calls for loop variable inside the loop
+            const foreachStartTag = loop.fullMatch.match(/<\?php\s+foreach\s*\([^)]+\)\s*:\s*\?>/)?.[0] || '';
+            const foreachEndTag = '<?php endforeach; ?>';
+
+            let loopContent = loop.content;
+            const assignments: string[] = [];
+
+            for (const [fullCall, info] of loopVarCalls.entries()) {
+                const optimizedVar = generateDataGetVarName(info.variable, info.path);
+                assignments.push(`    ${optimizedVar} = ${fullCall};`);
+
+                // Replace in loop content
+                const escapedCall = fullCall.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                loopContent = loopContent.replace(new RegExp(escapedCall, 'g'), optimizedVar);
+            }
+
+            // Reconstruct loop with optimizations
+            const optimizedLoop = foreachStartTag + '\n' + assignments.join('\n') + loopContent + foreachEndTag;
+
+            // Replace in compiled output
+            optimized = optimized.substring(0, loop.startIndex + offset) +
+                       optimizedLoop +
+                       optimized.substring(loop.endIndex + offset);
+
+            offset += optimizedLoop.length - loop.fullMatch.length;
+        }
     }
 
     return optimized;
@@ -769,17 +819,32 @@ export const compile = (template: string, baseNamespace: string, options: { inde
     // Compile the template
     let compiled = compileInternal(template, ctx);
 
-    // Optimize repeated data_get() calls by extracting them into variables
-    const dataGetOpt = generateDataGetOptimizations(compiled);
-    if (dataGetOpt.replacements.size > 0) {
-        compiled = applyDataGetOptimizations(compiled, dataGetOpt.replacements);
+    // Optimize repeated data_get() calls, respecting foreach loop boundaries
+    compiled = applyDataGetOptimizations(compiled);
+
+    // Find remaining data_get() calls at top level (outside loops) and optimize them
+    const topLevelCode = compiled.replace(/<\?php\s+foreach\s*\([^)]+\)\s*:\s*\?>.*?<\?php\s+endforeach;\s*\?>/gs, '');
+    const topLevelCalls = findDataGetCalls(topLevelCode);
+    const topLevelAssignments: string[] = [];
+
+    for (const [fullCall, info] of topLevelCalls.entries()) {
+        if (info.count > 1) {
+            const optimizedVar = generateDataGetVarName(info.variable, info.path);
+            topLevelAssignments.push(`    ${optimizedVar} = ${fullCall};`);
+
+            // Replace in compiled output (only outside loops)
+            const escapedCall = fullCall.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            compiled = compiled.replace(new RegExp(escapedCall, 'g'), optimizedVar);
+        }
     }
 
+    const topLevelOptimizations = topLevelAssignments.length > 0 ? topLevelAssignments.join('\n') + '\n' : '';
+
     // Combine variable assignments with data_get optimizations
-    const allAssignments = varAssignments + dataGetOpt.assignments;
+    const allAssignments = varAssignments + topLevelOptimizations;
 
     // If no variables, don't require $__data parameter (cleaner signature)
-    const hasVariables = templateVars.length > 0 || dataGetOpt.assignments.length > 0;
+    const hasVariables = templateVars.length > 0 || topLevelAssignments.length > 0;
 
     // Check if we can optimize to a single expression (with or without variables)
     const singleExpression = extractSingleExpression(compiled);

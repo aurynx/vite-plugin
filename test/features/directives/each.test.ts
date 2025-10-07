@@ -16,4 +16,10 @@ describe('@each Directive', () => {
 
         expect(compile(template, baseNamespace)).toBe(expected);
     });
+
+    it('optimizes repeated data_get() calls inside foreach loops', () => {
+        const { template, expected } = readFixture('loop-with-repeated-data-get');
+
+        expect(compile(template, baseNamespace)).toBe(expected);
+    });
 });
