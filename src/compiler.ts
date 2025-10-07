@@ -127,6 +127,79 @@ const convertToEchoStatements = (compiled: string): string => {
 };
 
 /**
+ * Find all data_get() calls in compiled code and return them with their frequency.
+ * Returns a map of data_get signature -> count
+ */
+const findDataGetCalls = (compiled: string): Map<string, { variable: string; path: string; count: number }> => {
+    const dataGetRegex = /data_get\(\s*(\$[a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)\s*,\s*'([^']+)'\s*\)/g;
+    const calls = new Map<string, { variable: string; path: string; count: number }>();
+
+    let match;
+    while ((match = dataGetRegex.exec(compiled)) !== null) {
+        const fullCall = match[0];
+        const variable = match[1];
+        const path = match[2];
+
+        if (calls.has(fullCall)) {
+            calls.get(fullCall)!.count++;
+        } else {
+            calls.set(fullCall, { variable, path, count: 1 });
+        }
+    }
+
+    return calls;
+};
+
+/**
+ * Generate optimized variable names for data_get calls.
+ * Example: data_get($cart, 'items') -> $__cart_items
+ */
+const generateDataGetVarName = (variable: string, path: string): string => {
+    const varName = variable.replace('$', '');
+    const pathParts = path.replace(/\./g, '_');
+    return `$__${varName}_${pathParts}`;
+};
+
+/**
+ * Generate variable assignments for repeated data_get() calls.
+ * Only creates variables for calls that appear more than once.
+ */
+const generateDataGetOptimizations = (compiled: string): { assignments: string; replacements: Map<string, string> } => {
+    const calls = findDataGetCalls(compiled);
+    const replacements = new Map<string, string>();
+    const assignments: string[] = [];
+
+    for (const [fullCall, info] of calls.entries()) {
+        // Only optimize if called more than once
+        if (info.count > 1) {
+            const optimizedVar = generateDataGetVarName(info.variable, info.path);
+            replacements.set(fullCall, optimizedVar);
+            assignments.push(`    ${optimizedVar} = ${fullCall};`);
+        }
+    }
+
+    return {
+        assignments: assignments.length > 0 ? assignments.join('\n') + '\n' : '',
+        replacements
+    };
+};
+
+/**
+ * Replace repeated data_get() calls with optimized variables.
+ */
+const applyDataGetOptimizations = (compiled: string, replacements: Map<string, string>): string => {
+    let optimized = compiled;
+
+    for (const [fullCall, optimizedVar] of replacements.entries()) {
+        // Escape special regex characters in the full call
+        const escapedCall = fullCall.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        optimized = optimized.replace(new RegExp(escapedCall, 'g'), optimizedVar);
+    }
+
+    return optimized;
+};
+
+/**
  * Transform <x-...> component tags into component() call syntax.
  * Handles props (static and dynamic), named/default slots, and several
  * small optimizations (echo-only slots, string concatenation, etc.).
@@ -694,31 +767,40 @@ export const compile = (template: string, baseNamespace: string, options: { inde
     };
 
     // Compile the template
-    const compiled = compileInternal(template, ctx);
+    let compiled = compileInternal(template, ctx);
+
+    // Optimize repeated data_get() calls by extracting them into variables
+    const dataGetOpt = generateDataGetOptimizations(compiled);
+    if (dataGetOpt.replacements.size > 0) {
+        compiled = applyDataGetOptimizations(compiled, dataGetOpt.replacements);
+    }
+
+    // Combine variable assignments with data_get optimizations
+    const allAssignments = varAssignments + dataGetOpt.assignments;
 
     // If no variables, don't require $__data parameter (cleaner signature)
-    const hasVariables = templateVars.length > 0;
+    const hasVariables = templateVars.length > 0 || dataGetOpt.assignments.length > 0;
 
     // Check if we can optimize to a single expression (with or without variables)
     const singleExpression = extractSingleExpression(compiled);
 
     if (singleExpression) {
-        return buildPhpWrapper(compiled, varAssignments, hasVariables, singleExpression);
+        return buildPhpWrapper(compiled, allAssignments, hasVariables, singleExpression);
     }
 
     // Check if we can optimize simple foreach loops to array_map + implode
     const foreachLoop = detectSimpleForeach(compiled);
     if (foreachLoop) {
         const optimized = convertForeachToArrayMap(foreachLoop);
-        return buildPhpWrapper(compiled, varAssignments, hasVariables, null, optimized, true);
+        return buildPhpWrapper(compiled, allAssignments, hasVariables, null, optimized, true);
     }
 
     // Check if we can optimize to string concatenation (no control structures)
     if (canOptimizeToStringConcatenation(compiled)) {
         const concatenated = convertToStringConcatenation(compiled);
-        return buildPhpWrapper(compiled, varAssignments, hasVariables, null, concatenated);
+        return buildPhpWrapper(compiled, allAssignments, hasVariables, null, concatenated);
     }
 
     // Default case: full buffered output
-    return buildPhpWrapper(compiled, varAssignments, hasVariables);
+    return buildPhpWrapper(compiled, allAssignments, hasVariables);
 };
