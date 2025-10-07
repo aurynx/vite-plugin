@@ -113,6 +113,13 @@ export class PhpBuilder {
     }
 
     /**
+     * Creates a safe echo with htmlspecialchars: <?= htmlspecialchars($expr, ENT_QUOTES, 'UTF-8') ?>
+     */
+    safeEcho(expression: string): string {
+        return `${phpSyntax.tags.shortEcho} htmlspecialchars(${expression}, ENT_QUOTES, 'UTF-8') ${phpSyntax.tags.close}`;
+    }
+
+    /**
      * Creates a PHP statement block: <?php statement; ?>
      */
     phpStatement(statement: string): string {
@@ -138,6 +145,34 @@ export class PhpBuilder {
      */
     foreachClose(): string {
         return `${phpSyntax.tags.open} endforeach; ${phpSyntax.tags.close}`;
+    }
+
+    /**
+     * Creates an if opening tag: <?php if (condition): ?>
+     */
+    ifOpen(condition: string): string {
+        return `${phpSyntax.tags.open} if (${condition}): ${phpSyntax.tags.close}`;
+    }
+
+    /**
+     * Creates an elseif tag: <?php elseif (condition): ?>
+     */
+    elseif(condition: string): string {
+        return `${phpSyntax.tags.open} elseif (${condition}): ${phpSyntax.tags.close}`;
+    }
+
+    /**
+     * Creates an else tag: <?php else: ?>
+     */
+    else(): string {
+        return `${phpSyntax.tags.open} else: ${phpSyntax.tags.close}`;
+    }
+
+    /**
+     * Creates an endif closing tag: <?php endif; ?>
+     */
+    endif(): string {
+        return `${phpSyntax.tags.open} endif; ${phpSyntax.tags.close}`;
     }
 
     /**

@@ -94,6 +94,25 @@ describe('PHP Builder', () => {
         expect(echo).toContain('?>');
     });
 
+    it('creates safe echo with htmlspecialchars', () => {
+        const builder = createPhpBuilder();
+        const safeEcho = builder.safeEcho('$user->name');
+
+        expect(safeEcho).toBe('<?= htmlspecialchars($user->name, ENT_QUOTES, \'UTF-8\') ?>');
+        expect(safeEcho).toContain('htmlspecialchars');
+        expect(safeEcho).toContain('ENT_QUOTES');
+        expect(safeEcho).toContain('UTF-8');
+    });
+
+    it('creates safe echo with data_get expression', () => {
+        const builder = createPhpBuilder();
+        const safeEcho = builder.safeEcho('data_get($user, \'profile.name\')');
+
+        expect(safeEcho).toBe('<?= htmlspecialchars(data_get($user, \'profile.name\'), ENT_QUOTES, \'UTF-8\') ?>');
+        expect(safeEcho).toMatch(/^<\?=/);
+        expect(safeEcho).toMatch(/\?>$/);
+    });
+
     it('can be reset and reused', () => {
         const builder = new PhpBuilder();
 
@@ -188,5 +207,48 @@ describe('PHP Builder', () => {
         expect(foreachClose).toBe('<?php endforeach; ?>');
         expect(foreachClose).toMatch(/^<\?php/);
         expect(foreachClose).toMatch(/\?>$/);
+    });
+
+    it('generates if opening tag', () => {
+        const builder = createPhpBuilder();
+        const ifOpen = builder.ifOpen('$user');
+
+        expect(ifOpen).toBe('<?php if ($user): ?>');
+        expect(ifOpen).toMatch(/^<\?php/);
+        expect(ifOpen).toMatch(/\?>$/);
+    });
+
+    it('generates if opening tag with complex condition', () => {
+        const builder = createPhpBuilder();
+        const ifOpen = builder.ifOpen('!empty($user) && $user->isActive()');
+
+        expect(ifOpen).toBe('<?php if (!empty($user) && $user->isActive()): ?>');
+    });
+
+    it('generates elseif tag', () => {
+        const builder = createPhpBuilder();
+        const elseif = builder.elseif('$status === "pending"');
+
+        expect(elseif).toBe('<?php elseif ($status === "pending"): ?>');
+        expect(elseif).toMatch(/^<\?php/);
+        expect(elseif).toMatch(/\?>$/);
+    });
+
+    it('generates else tag', () => {
+        const builder = createPhpBuilder();
+        const elseTag = builder.else();
+
+        expect(elseTag).toBe('<?php else: ?>');
+        expect(elseTag).toMatch(/^<\?php/);
+        expect(elseTag).toMatch(/\?>$/);
+    });
+
+    it('generates endif closing tag', () => {
+        const builder = createPhpBuilder();
+        const endif = builder.endif();
+
+        expect(endif).toBe('<?php endif; ?>');
+        expect(endif).toMatch(/^<\?php/);
+        expect(endif).toMatch(/\?>$/);
     });
 });

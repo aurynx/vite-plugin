@@ -430,6 +430,7 @@ const compileComments = (template: string): string => {
  * Escaped output uses htmlspecialchars to guard against XSS when rendering HTML.
  */
 const compileEchos = (template: string): string => {
+    const builder = createPhpBuilder();
     const echoPattern = /\{\{\{\s*(.+?)\s*}}}|\{\{\s*(.+?)\s*}}/g;
     return template.replace(echoPattern, (_match: string, raw: string | undefined, escaped: string | undefined): string => {
         const expression = raw ?? escaped;
@@ -448,8 +449,34 @@ const compileEchos = (template: string): string => {
         }
 
         // Escaped output: apply htmlspecialchars with standard flags.
-        return `<?= htmlspecialchars(${compiledExpression}, ENT_QUOTES, 'UTF-8') ?>`;
+        return builder.safeEcho(compiledExpression);
     });
+};
+
+/**
+ * Extract content between balanced parentheses.
+ * Handles nested parentheses correctly.
+ * Returns both the extracted content and the full length of the match.
+ */
+const extractBalancedParentheses = (str: string, startIndex: number): string => {
+    let depth = 0;
+    let start = -1;
+
+    for (let i = startIndex; i < str.length; i++) {
+        if (str[i] === '(') {
+            if (depth === 0) {
+                start = i + 1;
+            }
+            depth++;
+        } else if (str[i] === ')') {
+            depth--;
+            if (depth === 0) {
+                return str.substring(start, i);
+            }
+        }
+    }
+
+    return '';
 };
 
 /**
@@ -457,20 +484,105 @@ const compileEchos = (template: string): string => {
  * Expressions are passed through dot-notation compilation to support $obj.prop.
  */
 const compileIf = (template: string): string => {
-    template = template.replace(/@elseif\s*\((.*?)\)/gi, (_match: string, expression: string): string => `<?php elseif (${compileDotNotationInExpression(expression)}): ?>`);
-    template = template.replace(/@if\s*\((.*?)\)/g, (_match: string, expression: string): string => `<?php if (${compileDotNotationInExpression(expression)}): ?>`);
-    template = template.replace(/@else/gi, '<?php else: ?>');
-    template = template.replace(/@endif/gi, '<?php endif; ?>');
+    const builder = createPhpBuilder();
 
-    return template;
+    // Process @elseif with balanced parentheses - we need to find and replace the entire directive
+    let result = template;
+    let offset = 0;
+
+    // Process @elseif
+    while (true) {
+        const elseifMatch = result.substring(offset).match(/@elseif\s*\(/i);
+        if (!elseifMatch) break;
+
+        const matchStart = offset + elseifMatch.index!;
+        const parenStart = matchStart + elseifMatch[0].length - 1;
+        const expression = extractBalancedParentheses(result, parenStart);
+
+        if (expression) {
+            // Find the closing parenthesis position
+            let depth = 0;
+            let closeParenPos = parenStart;
+            for (let i = parenStart; i < result.length; i++) {
+                if (result[i] === '(') depth++;
+                else if (result[i] === ')') {
+                    depth--;
+                    if (depth === 0) {
+                        closeParenPos = i;
+                        break;
+                    }
+                }
+            }
+
+            // Replace the entire @elseif(...) with the PHP code
+            const fullMatch = result.substring(matchStart, closeParenPos + 1);
+            result = result.substring(0, matchStart) +
+                    builder.elseif(compileDotNotationInExpression(expression)) +
+                    result.substring(closeParenPos + 1);
+            offset = matchStart + builder.elseif(compileDotNotationInExpression(expression)).length;
+        } else {
+            break;
+        }
+    }
+
+    // Process @if
+    offset = 0;
+    while (true) {
+        const ifMatch = result.substring(offset).match(/@if\s*\(/);
+        if (!ifMatch) break;
+
+        const matchStart = offset + ifMatch.index!;
+        const parenStart = matchStart + ifMatch[0].length - 1;
+        const expression = extractBalancedParentheses(result, parenStart);
+
+        if (expression) {
+            // Find the closing parenthesis position
+            let depth = 0;
+            let closeParenPos = parenStart;
+            for (let i = parenStart; i < result.length; i++) {
+                if (result[i] === '(') depth++;
+                else if (result[i] === ')') {
+                    depth--;
+                    if (depth === 0) {
+                        closeParenPos = i;
+                        break;
+                    }
+                }
+            }
+
+            // Replace the entire @if(...) with the PHP code
+            const fullMatch = result.substring(matchStart, closeParenPos + 1);
+            result = result.substring(0, matchStart) +
+                    builder.ifOpen(compileDotNotationInExpression(expression)) +
+                    result.substring(closeParenPos + 1);
+            offset = matchStart + builder.ifOpen(compileDotNotationInExpression(expression)).length;
+        } else {
+            break;
+        }
+    }
+
+    result = result.replace(/@else/gi, builder.else());
+    result = result.replace(/@endif/gi, builder.endif());
+
+    return result;
 };
 
 /**
  * Compile loop directives (@each ... @endeach) into PHP foreach blocks.
  */
 const compileEach = (template: string): string => {
-    template = template.replace(/@each\s*\((.*?)\)/g, (_match: string, expression: string): string => `<?php foreach (${compileDotNotationInExpression(expression)}): ?>`);
-    template = template.replace(/@endeach/gi, '<?php endforeach; ?>');
+    const builder = createPhpBuilder();
+
+    template = template.replace(/@each\s*\((.*?)\)/g, (_match: string, expression: string): string => {
+        const compiled = compileDotNotationInExpression(expression);
+        // Parse foreach expression: $array as $item or $array as $key => $value
+        const asMatch = compiled.match(/^(.*?)\s+as\s+(.*)$/);
+        if (asMatch) {
+            return builder.foreachOpen(asMatch[1].trim(), asMatch[2].trim());
+        }
+        return `<?php foreach (${compiled}): ?>`;
+    });
+    template = template.replace(/@endeach/gi, builder.foreachClose());
 
     return template;
 };
@@ -480,8 +592,12 @@ const compileEach = (template: string): string => {
  * non-empty check to mirror typical template semantics.
  */
 const compileHas = (template: string): string => {
-    template = template.replace(/@has\s*\((.*?)\)/g, (_match: string, expression: string): string => `<?php if (!empty(${compileDotNotationInExpression(expression)})): ?>`);
-    template = template.replace(/@endhas/gi, '<?php endif; ?>');
+    const builder = createPhpBuilder();
+
+    template = template.replace(/@has\s*\((.*?)\)/g, (_match: string, expression: string): string =>
+        builder.ifOpen(`!empty(${compileDotNotationInExpression(expression)})`)
+    );
+    template = template.replace(/@endhas/gi, builder.endif());
 
     return template;
 };
