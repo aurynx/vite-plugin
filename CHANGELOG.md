@@ -1,5 +1,12 @@
 # Changelog
 
+# [0.7.0](https://github.com/aurynx/vite-plugin/compare/v0.6.0...v0.7.0) (2025-10-07)
+
+
+### Features
+
+* **compiler:** optimize data_get() calls within foreach loops ([1fb8efe](https://github.com/aurynx/vite-plugin/commit/1fb8efe48e180d32a38fe12cf620039d3d5bb4a0))
+
 # [0.6.0](https://github.com/aurynx/vite-plugin/compare/v0.5.0...v0.6.0) (2025-10-07)
 
 
