@@ -1,3 +1,7 @@
+/**
+ * Test helper that sorts variables in `use (...)` clauses for stable comparisons.
+ * Closure variable order can vary, so we normalize before asserting equality.
+ */
 export const normalizeUseClause = (
     str: string,
     opts?: { stripWhitespace?: boolean; global?: boolean }

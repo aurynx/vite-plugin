@@ -1,36 +1,42 @@
 import { promises as fs } from 'fs';
 import { resolve } from 'path';
 import { compile } from '@/compiler';
-import type { Plugin, ViteDevServer } from 'vite';
+import type { Plugin } from 'vite';
 import logger from '@/logger';
 
 /**
  * Configuration options for the Aurynx Vite plugin.
+ *
+ * These options control where templates are read from, where compiled PHP is
+ * written, and how component names are resolved. Defaults are explicit so the
+ * plugin behaves predictably without a user-provided config.
  */
 interface AurynxPluginOptions {
     /**
-     * The base PHP namespace for your view components.
-     * @default 'App\\View\\Components\\'
+     * Base PHP namespace used to resolve component tags into classes.
+     * Example: <x-button> becomes App\\View\\Components\\Button when this
+     * value is 'App\\View\\Components\\'. Adjust to match your app layout.
      */
     componentNamespace?: string;
     /**
-     * Path to your source templates, relative to the project root.
-     * @default 'resources/views'
+     * Root directory (relative to project root) containing Aurynx templates.
+     * The plugin watches this path and walks it during initial compilation.
      */
     viewsPath?: string;
     /**
-     * Path where the compiled PHP templates should be stored.
-     * @default 'cache/views'
+     * Destination directory for compiled PHP files. Treated as a build artifact
+     * (do not commit). Using a dedicated cache directory avoids overwriting
+     * source templates.
      */
     cachePath?: string;
     /**
-     * The file extension for your Aurynx templates.
-     * @default '.anx.php'
+     * File extension used to recognize Aurynx templates. Keep this if you use
+     * a different convention.
      */
     viewExtension?: string;
     /**
-     * Whether to perform an initial full compilation on startup / build.
-     * @default true
+     * Whether to perform a full compilation at server start. Enabling this
+     * surfaces template errors early but can slow startup for large projects.
      */
     buildOnStart?: boolean;
 }
@@ -38,13 +44,17 @@ interface AurynxPluginOptions {
 const projectRoot = resolve(process.cwd());
 
 /**
- * Creates a new instance of the Aurynx Vite plugin.
- * This is the main entry point for integrating with your `vite.config.ts`.
+ * Main plugin factory: produces a Vite plugin object.
  *
- * @param options - Optional configuration for the plugin.
+ * Behaviour summary:
+ * - Development: optionally run an initial compilation and watch for changes.
+ * - Production/build: run a single compilation before bundling to produce a
+ *   deterministic cache.
+ *
+ * Design notes: initial full builds are explicit while runtime updates are
+ * incremental; this keeps runtime overhead low and provides fast feedback.
  */
 export default function aurynx(options: AurynxPluginOptions = {}): Plugin {
-    // Merge user-provided options with sensible defaults.
     const config = {
         componentNamespace: 'App\\View\\Components\\',
         viewsPath: 'resources/views',
@@ -54,17 +64,26 @@ export default function aurynx(options: AurynxPluginOptions = {}): Plugin {
         ...options,
     };
 
-    // Resolve all paths to be absolute for reliability.
+    // Resolve absolute paths right away to avoid surprises if the process CWD
+    // changes while Vite is running (keeps subsequent path comparisons stable).
     const paths = {
         views: resolve(projectRoot, config.viewsPath),
         cache: resolve(projectRoot, config.cachePath),
     };
 
-    // Create a compiler instance pre-configured with the component namespace.
+    // Bind the configured namespace into the compiler function so callers
+    // don't need to pass it repeatedly; this keeps call sites concise.
     const boundCompile = (template: string) => compile(template, config.componentNamespace);
 
     /**
-     * Reads a source view, compiles it, and writes the result to the cache directory.
+     * Compile a single template and write the resulting PHP into the cache
+     * directory, preserving the relative structure from the views root.
+     *
+     * Side effects:
+     * - Overwrites existing compiled files (compiled output is a build artifact).
+     * - Creates directories as needed.
+     *
+     * Errors are logged rather than thrown so the dev server remains running.
      */
     const compileView = async (file: string): Promise<void> => {
         try {
@@ -80,16 +99,24 @@ export default function aurynx(options: AurynxPluginOptions = {}): Plugin {
 
             logger.log('✅ Compiled:', relativePath);
         } catch (error) {
+            // Log compilation errors and continue so the dev server stays available.
             logger.error('❌ Error compiling view', file, error);
         }
     };
 
     /**
-     * Recursively walk the views directory and compile all matching templates.
+     * Perform an initial walk of the views directory and compile matching files.
+     *
+     * Implementation notes and trade-offs:
+     * - Uses a simple recursive readdir walk and collects files before filtering
+     *   by extension. This keeps traversal logic straightforward.
+     * - All files are compiled concurrently via Promise.all; if I/O pressure
+     *   becomes an issue this could be throttled or batched.
+     * - If the views path is missing, the build is skipped with a warning.
      */
     const initialBuild = async (): Promise<void> => {
         try {
-            // Ensure the views directory exists.
+            // If the views folder doesn't exist, skip the build early.
             await fs.access(paths.views).catch(() => { throw new Error('Views path does not exist'); });
 
             const walk = async (dir: string): Promise<string[]> => {
@@ -107,13 +134,17 @@ export default function aurynx(options: AurynxPluginOptions = {}): Plugin {
             const targets = all.filter(f => f.endsWith(config.viewExtension));
 
             if (!targets.length) {
-                logger.info('ℹ️ No view templates found for initial compilation.');
-                return;
+                // Informative: no templates were discovered under the views path.
+                logger.info('ℹ️ No templates found — nothing to compile.');
             }
 
+            // Compile matching templates concurrently. If this becomes a hotspot
+            // consider processing files in batches to reduce I/O pressure.
             await Promise.all(targets.map(f => compileView(f)));
             logger.log(`✅ Initial compilation finished (${targets.length} files).`);
         } catch (err) {
+            // Non-fatal: emit a warning and continue. The message should contain
+            // enough information (missing path, permission error) to investigate.
             logger.warn('⚠️ Skipping initial compilation:', err instanceof Error ? err.message : err);
         }
     };
@@ -121,21 +152,23 @@ export default function aurynx(options: AurynxPluginOptions = {}): Plugin {
     return {
         name: 'vite-plugin-aurynx',
 
-        // Run initial build only during the production (Rollup) build phase.
-        buildStart: async () => {
+        // In production builds ensure a deterministic cached output before bundling.
+        async buildStart() {
             if (process.env.NODE_ENV !== 'development' && config.buildOnStart) {
                 await initialBuild();
             }
         },
 
-        // This hook wires into the dev server and its file watcher.
-        // Await initial build so the cache is ready before the first request.
-        async configureServer({ watcher }: ViteDevServer) {
+        // In development: optionally run an initial build and then watch for changes
+        // in the configured views directory to recompile incrementally.
+        async configureServer({ watcher }) {
             if (config.buildOnStart) {
                 await initialBuild();
                 logger.log('✅ Plugin ready');
             }
 
+            // Only respond to file events that originate from the views path and
+            // match the configured template extension to avoid unrelated rebuilds.
             const listener = (file: string): void => {
                 if (file.startsWith(paths.views) && file.endsWith(config.viewExtension)) {
                     compileView(file);

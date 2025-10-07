@@ -1,4 +1,13 @@
-/* Simple logger that prefixes all console output with a fixed tag. */
+/*
+ * Lightweight logger wrapper that prefixes all console output with the
+ * plugin label. This keeps logs easily identifiable when mixed with other
+ * tooling output (useful in dev servers and CI logs).
+ *
+ * Implementation notes:
+ * - Methods proxy to the corresponding console functions when available.
+ * - Some methods log the base label first then delegate to console.table/dir
+ *   when supported to preserve structure while keeping the label visible.
+ */
 
 export interface AurynxLogger {
   log: (...args: unknown[]) => void;

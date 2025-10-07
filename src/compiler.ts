@@ -1,31 +1,42 @@
 import {compileDotNotationInExpression, findUsedVariables, parseAttributes, tagNameToClassName, findTemplateVariables, generateVariableAssignments} from '@/helpers';
 import type { CompilerContext } from '@/types';
+import { createPhpBuilder } from '@/php';
 
 /**
- * Format component call with proper indentation.
- * Only formats with newlines if there's a slot.
+ * Format a component() call with sensible indentation.
+ * Only introduces line breaks when a slot is present to keep simple calls compact.
+ *
+ * Note: indentation depth is controlled by the compiler context; changing that
+ * scheme would require updating callers that rely on the current alignment.
  */
 const formatComponentCall = (callArgs: string[], indent: string, depth: number, hasSlot: boolean): string => {
     if (callArgs.length === 0) {
         return 'component()';
     }
 
-    // Don't format with newlines unless we have slots
+    // Keep single-line calls compact unless a slot requires multi-line formatting.
     if (!hasSlot) {
         return `component(${callArgs.join(', ')})`;
     }
 
-    // Arguments at depth level (depth=1 -> 2 spaces)
+    // Indentation for arguments at the requested depth.
     const argIndent = indent.repeat(depth);
-    // Closing paren at depth-1 level (depth=1 -> 0 spaces)
+    // Closing paren aligns one level up from the last argument.
     const closeIndent = indent.repeat(Math.max(0, depth - 1));
 
-    // Add trailing comma to each argument
+    // Add trailing comma to each argument for clearer diffs and alignment.
     const formattedArgs = callArgs.map(arg => argIndent + arg + ',').join('\n');
 
     return `component(\n${formattedArgs}\n${closeIndent})`;
 };
 
+/**
+ * Extract named slots from a component's slot content.
+ * Returns an object with named slot HTML and the remaining default slot.
+ *
+ * Caveat: this uses a simple regex and may not handle arbitrarily nested
+ * <x-slot:...> elements; a DOM/AST-based approach would be more robust.
+ */
 const extractNamedSlots = (content: string): { namedSlots: Record<string, string>, defaultSlot: string } => {
     const namedSlots: Record<string, string> = {};
     const slotRegex = /<x-slot:([a-zA-Z0-9_-]+)>(.*?)<\/x-slot>/sg;
@@ -44,16 +55,19 @@ const extractNamedSlots = (content: string): { namedSlots: Record<string, string
 };
 
 /**
- * Check if compiled content contains only PHP tags without plain HTML between them.
+ * Determine whether compiled output contains only PHP tags (no intervening HTML).
+ * This allows using pure PHP echo statements inside closures to avoid switching
+ * in and out of PHP mode.
  */
 const isPurePhpContent = (compiled: string): boolean => {
-    // Remove all PHP tags and check if anything (except whitespace) remains
+    // Strip PHP tags and check if anything but whitespace remains.
     const withoutPhpTags = compiled.replace(/<\?(?:php|=)[\s\S]*?\?>/g, '');
     return withoutPhpTags.trim() === '';
 };
 
 /**
- * Convert compiled PHP content with <?= ... ?> tags to pure PHP echo statements.
+ * Convert short echo / PHP blocks into plain echo statements suitable for
+ * embedding inside a function body. Preserves basic indentation.
  */
 const convertToEchoStatements = (compiled: string): string => {
     return compiled
@@ -61,6 +75,15 @@ const convertToEchoStatements = (compiled: string): string => {
         .replace(/<\?php\s+(.*?)\s*\?>/gs, (_, code) => `\n    ${code.trim()}`);
 };
 
+/**
+ * Transform <x-...> component tags into component() call syntax.
+ * Handles props (static and dynamic), named/default slots, and several
+ * small optimizations (echo-only slots, string concatenation, etc.).
+ *
+ * Important: parsing is regex-based for simplicity; extremely complex or
+ * malformed templates may not be handled correctly. For robust parsing a
+ * dedicated template parser/AST would be safer.
+ */
 const compileComponents = (template: string, ctx: CompilerContext): string => {
     const componentRegex = /<x-([a-zA-Z0-9.-]+)((?:\s+[:a-zA-Z0-9-]+(?:=(?:"[^"]*"|'[^']*'))?)*)\s*(?:\/>|>(.*?)<\/x-\1>)/sg;
 
@@ -89,7 +112,7 @@ const compileComponents = (template: string, ctx: CompilerContext): string => {
         if (slotContent && slotContent.trim() !== '') {
             const { namedSlots, defaultSlot } = extractNamedSlots(slotContent);
 
-            // Handle named slots
+            // Named slots: compile each slot's content into a Closure
             if (Object.keys(namedSlots).length > 0) {
                 const slotsArray: string[] = [];
                 const slotIndent = ctx.indent.repeat(ctx.currentDepth + 1);
@@ -100,21 +123,23 @@ const compileComponents = (template: string, ctx: CompilerContext): string => {
                     const nestedCtx: CompilerContext = { ...ctx, currentDepth: ctx.currentDepth + 1 };
                     const compiledContent = compileInternal(content, nestedCtx);
 
-                    // Optimize: if slot contains only PHP (no HTML), use echo instead of ?>...<?php
+                    // Optimization: if the slot is only PHP, convert to echo statements
+                    // and avoid toggling in/out of PHP tags inside the closure.
                     if (isPurePhpContent(compiledContent)) {
                         const phpCode = convertToEchoStatements(compiledContent);
                         slotsArray.push(`'${name}' => function()${useClause} {${phpCode}\n    }`);
                     } else {
+                        // Keep original compiled HTML/PHP when mixed content is present.
                         slotsArray.push(`'${name}' => function()${useClause} { ?>${compiledContent}<?php }`);
                     }
                 }
 
-                // Format slots array with multiple lines and proper indentation
+                // Format slots array with explicit indentation for readability.
                 const formattedSlots = slotsArray.map(slot => `${slotIndent}${slot}`).join(',\n');
                 callArgs.push(`slots: [\n${formattedSlots}\n${ctx.indent.repeat(ctx.currentDepth)}]`);
             }
 
-            // Handle default slot - preserve original formatting
+            // Default slot: compile and preserve formatting when necessary
             const trimmedDefaultSlot = defaultSlot.trim();
             if (trimmedDefaultSlot !== '') {
                 const usedVariables = findUsedVariables(trimmedDefaultSlot);
@@ -122,9 +147,8 @@ const compileComponents = (template: string, ctx: CompilerContext): string => {
                 const nestedCtx: CompilerContext = { ...ctx, currentDepth: ctx.currentDepth + 2 };
                 const compiledSlot = compileInternal(defaultSlot, nestedCtx);
 
-                // Optimize: if slot contains only PHP (no HTML), use echo instead of ?>...<?php
+                // If slot is PHP-only, emit echo statements for cleaner closure bodies.
                 if (isPurePhpContent(compiledSlot)) {
-                    // Format echo statements with proper indentation (inside slot function body)
                     const echoIndent = ctx.indent.repeat(ctx.currentDepth + 1);
                     const phpCode = compiledSlot
                         .replace(/<\?=\s*(.*?)\s*\?>/gs, (_, expr) => `\n${echoIndent}echo ${expr.trim()};`)
@@ -132,20 +156,21 @@ const compileComponents = (template: string, ctx: CompilerContext): string => {
                     const slotString = `function()${useClause} {${phpCode}\n${ctx.indent.repeat(ctx.currentDepth)}}`;
                     callArgs.push(`slot: ${slotString}`);
                 } else {
+                    // Mixed content: keep compiled HTML/PHP wrapped in a closure.
                     const slotString = `function()${useClause} { ?>${compiledSlot}<?php }`;
                     callArgs.push(`slot: ${slotString}`);
                 }
             }
         }
 
-        // Check if we have any slot (default or named)
+        // Detect presence of slot-related args to decide formatting style
         const hasSlot = callArgs.some(arg =>
             arg.startsWith('slot: function()') || arg.startsWith('slots: [')
         );
 
         const formattedCall = formatComponentCall(callArgs, ctx.indent, ctx.currentDepth, hasSlot);
 
-        // Format with newlines if we have slot
+        // When slots are present use multi-line component invocation for clarity
         if (hasSlot) {
             return `<?=\n${formattedCall}\n?>`;
         }
@@ -154,10 +179,19 @@ const compileComponents = (template: string, ctx: CompilerContext): string => {
     });
 };
 
+/**
+ * Convert Aurynx comment syntax {{-- --}} into a PHP block comment.
+ */
 const compileComments = (template: string): string => {
     return template.replace(/\{\{--(.*?)--}}/gs, '<?php /*$1*/ ?>');
 };
 
+/**
+ * Compile echo expressions. Handles raw output ({{{ }}}), escaped output ({{ }}),
+ * and a special case for $slot which is a Closure that must be invoked.
+ *
+ * Escaped output uses htmlspecialchars to guard against XSS when rendering HTML.
+ */
 const compileEchos = (template: string): string => {
     const echoPattern = /\{\{\{\s*(.+?)\s*}}}|\{\{\s*(.+?)\s*}}/g;
     return template.replace(echoPattern, (_match: string, raw: string | undefined, escaped: string | undefined): string => {
@@ -166,20 +200,25 @@ const compileEchos = (template: string): string => {
 
         const compiledExpression = compileDotNotationInExpression(expression as string);
 
-        // Raw output for {{{ }}}
+        // Raw output for {{{ }}} — emit directly without escaping.
         if (raw) {
             return `<?= ${compiledExpression} ?>`;
         }
 
-        // Special handling for $slot - it's a Closure, needs to be invoked
+        // $slot is a Closure; invoke it safely if present.
         if (trimmedExpression === '$slot') {
             return `<?php if (isset($slot)) { echo ($slot)(); } ?>`;
         }
 
+        // Escaped output: apply htmlspecialchars with standard flags.
         return `<?= htmlspecialchars(${compiledExpression}, ENT_QUOTES, 'UTF-8') ?>`;
     });
 };
 
+/**
+ * Compile conditional directives (@if, @elseif, @else, @endif) to PHP.
+ * Expressions are passed through dot-notation compilation to support $obj.prop.
+ */
 const compileIf = (template: string): string => {
     template = template.replace(/@elseif\s*\((.*?)\)/gi, (_match: string, expression: string): string => `<?php elseif (${compileDotNotationInExpression(expression)}): ?>`);
     template = template.replace(/@if\s*\((.*?)\)/g, (_match: string, expression: string): string => `<?php if (${compileDotNotationInExpression(expression)}): ?>`);
@@ -189,6 +228,9 @@ const compileIf = (template: string): string => {
     return template;
 };
 
+/**
+ * Compile loop directives (@each ... @endeach) into PHP foreach blocks.
+ */
 const compileEach = (template: string): string => {
     template = template.replace(/@each\s*\((.*?)\)/g, (_match: string, expression: string): string => `<?php foreach (${compileDotNotationInExpression(expression)}): ?>`);
     template = template.replace(/@endeach/gi, '<?php endforeach; ?>');
@@ -196,6 +238,10 @@ const compileEach = (template: string): string => {
     return template;
 };
 
+/**
+ * Compile @has/@endhas directives into PHP empty checks. This maps to a
+ * non-empty check to mirror typical template semantics.
+ */
 const compileHas = (template: string): string => {
     template = template.replace(/@has\s*\((.*?)\)/g, (_match: string, expression: string): string => `<?php if (!empty(${compileDotNotationInExpression(expression)})): ?>`);
     template = template.replace(/@endhas/gi, '<?php endif; ?>');
@@ -203,6 +249,10 @@ const compileHas = (template: string): string => {
     return template;
 };
 
+/**
+ * Helpers for form-related directives that echo attribute strings when true.
+ * Converts @checked/@selected/@disabled(...) into small conditional echoes.
+ */
 const compileFormHelpers = (template: string): string => {
     template = template.replace(/@checked\s*\((.*?)\)/g, (_match: string, expression: string): string => `<?php if (${compileDotNotationInExpression(expression)}) { echo ' checked'; } ?>`);
     template = template.replace(/@selected\s*\((.*?)\)/g, (_match: string, expression: string): string => `<?php if (${compileDotNotationInExpression(expression)}) { echo ' selected'; } ?>`);
@@ -212,7 +262,8 @@ const compileFormHelpers = (template: string): string => {
 };
 
 /**
- * Internal compile function without closure wrapper (used for recursive compilation of slots).
+ * Internal compile pipeline used for nested slot compilation. This variant
+ * returns compiled content without wrapping it in the final closure.
  */
 const compileInternal = (template: string, ctx: CompilerContext): string => {
     let compiled: string = template;
@@ -229,8 +280,8 @@ const compileInternal = (template: string, ctx: CompilerContext): string => {
 };
 
 /**
- * Check if compiled content is a single expression that can be returned directly.
- * Returns the expression without PHP tags if it's a single <?= ... ?> statement.
+ * Detect a single-expression compiled result of the form `<?= expr ?>` so the
+ * compiler can emit a direct return value instead of a buffered template.
  */
 const extractSingleExpression = (compiled: string): string | null => {
     const trimmed = compiled.trim();
@@ -246,8 +297,8 @@ const extractSingleExpression = (compiled: string): string | null => {
 };
 
 /**
- * Escape string for PHP single-quoted strings.
- * Converts special characters to their escape sequences.
+ * Escape text for inclusion in PHP single-quoted strings. Order matters: backslashes
+ * must be escaped first to avoid double-escaping.
  */
 const escapePhpString = (str: string): string => {
     return str
@@ -259,8 +310,8 @@ const escapePhpString = (str: string): string => {
 };
 
 /**
- * Detect if compiled content is a simple foreach loop with only echo statements.
- * Returns loop details if it can be optimized, null otherwise.
+ * Identify simple foreach loops that consist of static text and <?= ... ?>
+ * echoes only. Such loops can be optimized into array_map + implode.
  */
 const detectSimpleForeach = (compiled: string): { array: string; itemVar: string; content: string; prefix: string; suffix: string } | null => {
     const trimmed = compiled.trim();
@@ -275,21 +326,20 @@ const detectSimpleForeach = (compiled: string): { array: string; itemVar: string
 
     const [, arrayExpr, itemVar, content] = match;
 
-    // Check if content only contains <?= ... ?> tags and static text (no nested control structures)
+    // Avoid nested control structures — optimization targets straightforward loops only.
     const hasNestedControlStructures = /<\?php\s+(if|foreach|while|for)\s/.test(content);
     if (hasNestedControlStructures) {
         return null;
     }
 
-    // Extract prefix and suffix (static text before/after echo tags)
+    // Extract prefix/suffix around the echo tags for accurate reconstruction.
     const echoPattern = /<\?=\s*(.*?)\s*\?>/gs;
     const echoMatches = [...content.matchAll(echoPattern)];
 
     if (echoMatches.length === 0) {
-        return null; // No echo statements
+        return null; // No echo statements to optimize
     }
 
-    // Get text before first echo and after last echo
     const firstEchoIndex = content.indexOf(echoMatches[0][0]);
     const lastEchoMatch = echoMatches[echoMatches.length - 1];
     const lastEchoIndex = content.lastIndexOf(lastEchoMatch[0]);
@@ -307,12 +357,14 @@ const detectSimpleForeach = (compiled: string): { array: string; itemVar: string
 };
 
 /**
- * Convert simple foreach loop to array_map + implode for better performance.
+ * Convert a simple foreach loop into an implode(array_map(...)) expression.
+ * This produces a single expression that avoids buffering for predictable
+ * loops and can be faster in many PHP runtimes.
  */
 const convertForeachToArrayMap = (loopInfo: { array: string; itemVar: string; content: string; prefix: string; suffix: string }): string => {
     const { array, itemVar, content, prefix, suffix } = loopInfo;
 
-    // Extract all parts (static text and expressions)
+    // Split into static parts and expressions, preserving literal text.
     const parts: string[] = [];
     let lastIndex = 0;
 
@@ -323,7 +375,7 @@ const convertForeachToArrayMap = (loopInfo: { array: string; itemVar: string; co
         const expression = match[1].trim();
         const offset = match.index;
 
-        // Add static text before this expression
+        // Add static text preceding the expression.
         if (offset > lastIndex) {
             const staticText = content.substring(lastIndex, offset);
             if (staticText) {
@@ -331,13 +383,13 @@ const convertForeachToArrayMap = (loopInfo: { array: string; itemVar: string; co
             }
         }
 
-        // Add the expression
+        // Add the expression itself.
         parts.push(`(${expression})`);
 
         lastIndex = offset + match[0].length;
     }
 
-    // Add remaining static text
+    // Append any trailing static text.
     if (lastIndex < content.length) {
         const staticText = content.substring(lastIndex);
         if (staticText) {
@@ -345,45 +397,41 @@ const convertForeachToArrayMap = (loopInfo: { array: string; itemVar: string; co
         }
     }
 
-    // Build the mapper function body
+    // Build mapper body and join parts with concatenation.
     const mapperBody = parts.length === 1 && !parts[0].startsWith("'")
         ? parts[0]
         : parts.join(' . ');
 
-    // Generate array_map + implode code
     const prefixStr = prefix ? `'${escapePhpString(prefix)}' . ` : '';
     const suffixStr = suffix ? ` . '${escapePhpString(suffix)}'` : '';
 
-    // Use ternary to handle null/empty arrays
+    // Use a ternary to gracefully handle null/empty arrays.
     return `(${array} ? ${prefixStr}implode('', array_map(static fn(mixed ${itemVar}): string => ${mapperBody}, ${array}))${suffixStr} : '')`;
 };
 
 /**
- * Check if compiled content can be optimized to string concatenation.
- * Returns true if content only contains <?= ... ?> tags (no control structures).
+ * Decide whether compiled content is safe to convert into a single string
+ * concatenation expression (no control structures present).
  */
 const canOptimizeToStringConcatenation = (compiled: string): boolean => {
     const trimmed = compiled.trim();
 
-    // Empty content
     if (!trimmed) {
         return false;
     }
 
-    // Check if there are any <?php tags (excluding comments)
-    // We want to avoid content with control structures like if/foreach
+    // Reject content containing PHP control structures — avoid changing semantics.
     const phpTags = trimmed.match(/<\?php\s+(?!\/\*)/g);
     if (phpTags && phpTags.length > 0) {
         return false;
     }
 
-    // Must have at least one <?= tag or be pure text
     return true;
 };
 
 /**
- * Convert compiled content with <?= ... ?> tags to string concatenation.
- * Example: "Hello <?= $name ?>" -> "'Hello ' . $name"
+ * Convert compiled output with <?= ... ?> echo tags into a PHP string
+ * concatenation expression, e.g. "Hello <?= $name ?>" => "'Hello ' . $name".
  */
 const convertToStringConcatenation = (compiled: string): string => {
     const parts: string[] = [];
@@ -434,8 +482,90 @@ const convertToStringConcatenation = (compiled: string): string => {
 };
 
 /**
- * The main compile function that orchestrates the entire compilation pipeline.
- * Wraps the result in a closure for better performance (40-60% faster repeated renders).
+ * Build the final PHP wrapper using PhpBuilder for consistent formatting.
+ * Generates either an arrow function or a regular function with ob_start/ob_get_clean.
+ */
+const buildPhpWrapper = (
+    compiled: string,
+    varAssignments: string,
+    hasVariables: boolean,
+    singleExpression: string | null = null,
+    optimizedReturn: string | null = null,
+    skipEmptyLineAfterVars: boolean = false
+): string => {
+    const builder = createPhpBuilder();
+
+    builder
+        .openTag()
+        .emptyLine()
+        .strictTypes()
+        .emptyLine();
+
+    // Case 1: Single expression with arrow function (no variables)
+    if (singleExpression && !hasVariables) {
+        builder.returnArrowFunction('', 'string', singleExpression);
+        builder.emptyLine();
+        return builder.build();
+    }
+
+    // Case 2: Single expression or optimized return with variables
+    if ((singleExpression || optimizedReturn) && hasVariables) {
+        const returnValue = singleExpression || optimizedReturn;
+        builder.line('return static function (array $__data): string {');
+        if (varAssignments.trim()) {
+            builder.line(varAssignments.trimEnd());
+            if (!skipEmptyLineAfterVars) {
+                builder.emptyLine();
+            }
+        }
+        builder.line(`    return ${returnValue};`);
+        builder.line('};');
+        builder.emptyLine();
+        return builder.build();
+    }
+
+    // Case 3: Optimized return without variables
+    if (optimizedReturn && !hasVariables) {
+        builder.line('return static function (): string {');
+        builder.line(`    return ${optimizedReturn};`);
+        builder.line('};');
+        builder.emptyLine();
+        return builder.build();
+    }
+
+    // Case 4: Full buffered output
+    const functionSignature = hasVariables
+        ? 'static function (array $__data): string'
+        : 'static function (): string';
+
+    builder.line(`return ${functionSignature} {`);
+
+    if (hasVariables && varAssignments.trim()) {
+        builder.line(varAssignments.trimEnd());
+        builder.emptyLine();
+    }
+
+    builder.line('    ob_start();');
+    builder.line('?>');
+    builder.line(compiled + '<?php');
+    builder.line('    return ob_get_clean();');
+    builder.line('};');
+    builder.emptyLine();
+
+    return builder.build();
+};
+
+/**
+ * The main compile function that orchestrates the whole pipeline.
+ * It extracts template variables, applies a sequence of transforms, and
+ * emits an optimized PHP closure. Several optimizations are attempted in
+ * order: single-expression return, loop-to-implode, and string concatenation.
+ *
+ * Performance notes:
+ * - The final result is wrapped in a static closure to improve repeated
+ *   render performance.
+ * - Variable extraction is implemented explicitly rather than using extract()
+ *   to keep the generated code clear and slightly faster.
  */
 export const compile = (template: string, baseNamespace: string, options: { indent?: string } = {}): string => {
     // Find all variables used in the original template
@@ -461,110 +591,22 @@ export const compile = (template: string, baseNamespace: string, options: { inde
     const singleExpression = extractSingleExpression(compiled);
 
     if (singleExpression) {
-        if (!hasVariables) {
-            // Use arrow function for single expression without variables
-            return `<?php\n\ndeclare(strict_types=1);\n\nreturn static fn(): string => ${singleExpression};\n`;
-        } else {
-            // Use regular function with direct return for single expression with variables
-            return `<?php
-
-declare(strict_types=1);
-
-return static function (array $__data): string {
-${varAssignments}    return ${singleExpression};
-};
-`;
-        }
+        return buildPhpWrapper(compiled, varAssignments, hasVariables, singleExpression);
     }
 
     // Check if we can optimize simple foreach loops to array_map + implode
     const foreachLoop = detectSimpleForeach(compiled);
     if (foreachLoop) {
         const optimized = convertForeachToArrayMap(foreachLoop);
-
-        const functionSignature = hasVariables
-            ? 'static function (array $__data): string'
-            : 'static function (): string';
-
-        if (hasVariables) {
-            return `<?php
-
-declare(strict_types=1);
-
-return ${functionSignature} {
-${varAssignments.trimEnd()}
-    return ${optimized};
-};
-`;
-        } else {
-            return `<?php
-
-declare(strict_types=1);
-
-return ${functionSignature} {
-    return ${optimized};
-};
-`;
-        }
+        return buildPhpWrapper(compiled, varAssignments, hasVariables, null, optimized, true);
     }
 
     // Check if we can optimize to string concatenation (no control structures)
     if (canOptimizeToStringConcatenation(compiled)) {
         const concatenated = convertToStringConcatenation(compiled);
-
-        const functionSignature = hasVariables
-            ? 'static function (array $__data): string'
-            : 'static function (): string';
-
-        if (hasVariables) {
-            return `<?php
-
-declare(strict_types=1);
-
-return ${functionSignature} {
-${varAssignments}    return ${concatenated};
-};
-`;
-        } else {
-            return `<?php
-
-declare(strict_types=1);
-
-return ${functionSignature} {
-    return ${concatenated};
-};
-`;
-        }
+        return buildPhpWrapper(compiled, varAssignments, hasVariables, null, concatenated);
     }
 
-    const functionSignature = hasVariables
-        ? 'static function (array $__data): string'
-        : 'static function (): string';
-
-    // Wrap in closure with explicit variable extraction (10-15% faster than extract())
-    if (hasVariables) {
-        return `<?php
-
-declare(strict_types=1);
-
-return ${functionSignature} {
-${varAssignments}    ob_start();
-?>
-${compiled}<?php
-    return ob_get_clean();
-};
-`;
-    } else {
-        return `<?php
-
-declare(strict_types=1);
-
-return ${functionSignature} {
-    ob_start();
-?>
-${compiled}<?php
-    return ob_get_clean();
-};
-`;
-    }
+    // Default case: full buffered output
+    return buildPhpWrapper(compiled, varAssignments, hasVariables);
 };

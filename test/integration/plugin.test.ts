@@ -3,6 +3,7 @@ import aurynx from '@/index';
 import { promises as fs } from 'fs';
 import { resolve } from 'path';
 
+// Integration test paths — we create real directories to verify the plugin works end-to-end
 const root = process.cwd();
 const viewsDir = resolve(root, 'resources/views');
 const cacheDir = resolve(root, 'cache/views');
@@ -20,15 +21,18 @@ const writeTemplate = async (rel: string, content: string) => {
 };
 
 describe('plugin initial build', () => {
-  let logSpy: any;
+  let logSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
+    // Start fresh — clean up from previous runs or interrupted tests
     // Clean full roots first (covers aborted runs or layout changes)
     await fs.rm(cacheRoot, { recursive: true, force: true });
     await fs.rm(resourcesRoot, { recursive: true, force: true });
     await ensureDir(viewsDir);
     await writeTemplate('sample.anx.php', '<div>{{ $value }}</div>');
-    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    // Spy on console.log to verify compilation messages
+    logSpy = vi.spyOn(console, 'log');
   });
 
   afterEach(async () => {

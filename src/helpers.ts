@@ -2,6 +2,11 @@ import type { AttributeMap } from '@/types';
 
 /**
  * Parses an attribute string from a component tag into a key-value object.
+ *
+ * Notes:
+ * - Supports shorthand boolean attributes (no value -> 'true').
+ * - Keeps binding names (e.g. ':prop') intact so callers can distinguish
+ *   between static and dynamic values.
  */
 export const parseAttributes = (attrsString: string): AttributeMap => {
     const attrs: AttributeMap = {};
@@ -22,7 +27,11 @@ export const parseAttributes = (attrsString: string): AttributeMap => {
 };
 
 /**
- * Compiles dot notation within a PHP expression.
+ * Rewrite dot-notation access within PHP expressions into data_get calls.
+ * Example: $user.name -> data_get($user, 'name')
+ *
+ * Rationale: data_get preserves safe access semantics for arrays/objects in
+ * compiled templates without introducing runtime errors for missing keys.
  */
 export const compileDotNotationInExpression = (expression: string): string => {
     return expression.replace(/(\$[a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)\.([a-zA-Z0-9_.]+)/g,
@@ -31,7 +40,11 @@ export const compileDotNotationInExpression = (expression: string): string => {
 };
 
 /**
- * Converts a kebab-case/dot-notation tag name into a PascalCase PHP class name.
+ * Convert a kebab-case and dot-notated component tag into a fully-qualified
+ * PascalCase PHP class name under the provided base namespace.
+ *
+ * Example: "ui.button.primary" with base "App\\View\\Components\\"
+ * becomes "App\\View\\Components\\Ui\\Button\\Primary".
  */
 export const tagNameToClassName = (tagName: string, baseNamespace: string): string => {
     const parts = tagName.split('.').map(part =>
@@ -42,10 +55,11 @@ export const tagNameToClassName = (tagName: string, baseNamespace: string): stri
 };
 
 /**
- * Finds all unique PHP variables used in the original Aurynx template.
- * Scans before compilation to extract variables for explicit assignment generation.
- * @param template The raw Aurynx template string.
- * @returns An array of unique variable names (without $ prefix).
+ * Find all unique template-level PHP variables referenced in the raw Aurynx
+ * template. The output excludes internal names and loop-assigned variables.
+ *
+ * This is used to generate explicit variable assignments for the compiled
+ * closure signature so templates don't rely on implicit extract() behaviour.
  */
 export const findTemplateVariables = (template: string): string[] => {
     const vars = new Set<string>();
@@ -97,9 +111,9 @@ export const findTemplateVariables = (template: string): string[] => {
 };
 
 /**
- * Generates PHP code for explicit variable assignments from $__data array.
- * @param variables Array of variable names (without $ prefix).
- * @returns PHP code string with variable assignments.
+ * Generate PHP code that assigns entries from the $__data array to local
+ * variables used in the template. This avoids implicit extraction and makes
+ * the generated code easier to read and reason about.
  */
 export const generateVariableAssignments = (variables: string[]): string => {
     if (variables.length === 0) {
@@ -112,14 +126,16 @@ export const generateVariableAssignments = (variables: string[]): string => {
 };
 
 /**
- * Finds all unique PHP variables (e.g., $user, $post) used within a string,
- * ignoring variables that are defined within the content itself (like in @each).
- * @param content The string content to scan.
- * @returns An array of unique variable names.
+ * Extract unique PHP variables used in a content fragment, excluding those
+ * defined by the fragment itself (e.g. loop variables). Returns variable
+ * names including the leading '$'.
+ *
+ * Note: this function is conservative and uses regexes; it may not catch
+ * every edge case in complex embedded PHP code.
  */
 export const findUsedVariables = (content: string): string[] => {
     // 1. Find all variables being defined in loops (e.g., `as $user`, `as $key => $value`)
-    // We use a non-greedy match to correctly handle nested loops in the future.
+    // Use a non-greedy match to reduce false positives in nested contexts.
     const definedVarRegex = /@each\s*\(.*?as\s+(?:(\$[a-zA-Z0-9_]+)\s*=>\s*)?(\$[a-zA-Z0-9_]+)\)/g;
     const definedVars = new Set<string>();
     let match;

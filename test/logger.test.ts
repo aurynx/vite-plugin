@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { logger } from '@/logger';
 
-// Common prefix we expect in all logger outputs.
+// Expected prefix that the logger should add to every emitted message.
 const PREFIX = '[Aurynx Vite Plugin]';
 
-// Helper to create a spy and restore automatically.
+// Helper: spy on a console method and silence its real output during tests.
 const spy = <K extends keyof Console>(method: K) => {
   const s = vi.spyOn(console, method as any).mockImplementation(() => {});
   return s;
@@ -56,7 +56,7 @@ describe('logger', () => {
   it('assert passes prefix when condition fails', () => {
     logger.assert(false, 'failure');
 
-    // First argument is condition (false), then the prefix and additional data.
+    // For failing assertions the logger should include the prefix as part of the args
     expect(assertSpy.mock.calls[0][0]).toBe(false);
     expect(assertSpy.mock.calls[0][1]).toBe(PREFIX);
     expect(assertSpy.mock.calls[0][2]).toBe('failure');
@@ -64,10 +64,10 @@ describe('logger', () => {
 
   it('assert does not emit extra args when condition true', () => {
     logger.assert(true, 'should-not-log');
-    // With true condition, original console.assert(true) still called once.
+    // Passing assertions should not inject the prefix into the console call
     expect(assertSpy).toHaveBeenCalledTimes(1);
     expect(assertSpy.mock.calls[0][0]).toBe(true);
-    // Should not include prefix for successful asserts according to implementation.
+    // No extra args for passing assertions — keeps console output minimal
     expect(assertSpy.mock.calls[0].length).toBe(1);
   });
 });
