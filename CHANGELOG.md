@@ -1,5 +1,18 @@
 # Changelog
 
+# [0.9.0](https://github.com/aurynx/vite-plugin/compare/v0.8.0...v0.9.0) (2025-10-07)
+
+
+### Bug Fixes
+
+* **compiler:** simplify slot invocation logic in PHP output ([0c00c2c](https://github.com/aurynx/vite-plugin/commit/0c00c2c1e0e0692fb663b0794bce8206f860eb54))
+
+
+### Features
+
+* **plugin:** add foreach opening and closing tag generation methods ([e19ae6a](https://github.com/aurynx/vite-plugin/commit/e19ae6aeb753b044d08198001206a4aa351ac169))
+* **plugin:** add support for if, elseif, else, and endif directives ([a045cca](https://github.com/aurynx/vite-plugin/commit/a045cca1e059393d69650bb3e3929c0fd627dc98))
+
 # [0.8.0](https://github.com/aurynx/vite-plugin/compare/v0.7.0...v0.8.0) (2025-10-07)
 
 
