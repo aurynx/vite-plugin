@@ -1,5 +1,14 @@
 # Changelog
 
+# [0.6.0](https://github.com/aurynx/vite-plugin/compare/v0.5.0...v0.6.0) (2025-10-07)
+
+
+### Features
+
+* **compiler:** add static arrow and regular function creation methods ([e4b4877](https://github.com/aurynx/vite-plugin/commit/e4b48772da2e52d3ae5886ac282ccd6a79bf9a8d))
+* **compiler:** optimize repeated data_get() calls with variable assignments ([fe589de](https://github.com/aurynx/vite-plugin/commit/fe589def43bc97e0f5b136436e913d50974a4a3f))
+* **plugin:** add support for loop variables in [@each](https://github.com/each) directive ([a4d8df5](https://github.com/aurynx/vite-plugin/commit/a4d8df5c8a84687bdf00fa8e01146ea41f2e7d38))
+
 # [0.5.0](https://github.com/aurynx/vite-plugin/compare/v0.4.0...v0.5.0) (2025-10-07)
 
 
