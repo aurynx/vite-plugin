@@ -10,4 +10,10 @@ describe('@each Directive', () => {
 
         expect(compile(template, baseNamespace)).toBe(expected);
     });
+
+    it('excludes loop variables from template variable extraction', () => {
+        const { template, expected } = readFixture('each-with-loop-variable');
+
+        expect(compile(template, baseNamespace)).toBe(expected);
+    });
 });

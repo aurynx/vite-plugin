@@ -77,12 +77,16 @@ export const findTemplateVariables = (template: string): string[] => {
         vars.add(match[1]);
     }
 
-    // Pattern 3: @each($items as $item) - extract collection variable only, exclude loop variable
-    const eachRegex = /@each\s*\(\s*\$([a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)\s+as\s+(?:\$[a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*(?:\s*=>\s*)?)?\$([a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)\)/g;
+    // Pattern 3: @each($items as $item) or @each($key => $value) - extract collection variable only, exclude loop variables
+    // Support dot-notation in collection: @each($cart.items as $item)
+    const eachRegex = /@each\s*\(\s*\$([a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)(?:\.[a-zA-Z0-9_.]+)?\s+as\s+(?:\$([a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)\s*=>\s*)?\$([a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*)\)/g;
     const loopVars = new Set<string>();
     while ((match = eachRegex.exec(template)) !== null) {
-        vars.add(match[1]); // Add collection variable (e.g., $users)
-        loopVars.add(match[2]); // Track loop variable to exclude (e.g., $user)
+        vars.add(match[1]); // Add collection variable (e.g., $users or $cart from $cart.items)
+        if (match[2]) {
+            loopVars.add(match[2]); // Track key variable to exclude (e.g., $key)
+        }
+        loopVars.add(match[3]); // Track loop variable to exclude (e.g., $user or $item)
     }
 
     // Pattern 4: Component props :prop="$variable" or :prop="'string $variable'"
