@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 return static function (array $__data): string {
+    $slot = $__data['slot'] ?? null;
     $title = $__data['title'] ?? null;
 
     ob_start();
@@ -24,7 +25,7 @@ return static function (array $__data): string {
             </nav>
         </header>
         <main>
-            <?php if (isset($slot)) { echo ($slot)(); } ?>
+            <?php if ($slot) { echo $slot(); } ?>
         </main>
         <footer>
             <p>&copy; <?= date('Y') ?> My Awesome Shop. All rights reserved.</p>

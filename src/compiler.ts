@@ -444,7 +444,7 @@ const compileEchos = (template: string): string => {
 
         // $slot is a Closure; invoke it safely if present.
         if (trimmedExpression === '$slot') {
-            return `<?php if (isset($slot)) { echo ($slot)(); } ?>`;
+            return `<?php if ($slot) { echo $slot(); } ?>`;
         }
 
         // Escaped output: apply htmlspecialchars with standard flags.

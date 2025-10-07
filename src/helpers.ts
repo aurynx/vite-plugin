@@ -108,7 +108,8 @@ export const findTemplateVariables = (template: string): string[] => {
     }
 
     // Exclude special internal variables and loop variables
-    const excludeVars = ['slot', '__data', '__path'];
+    // Note: $slot is now extracted from $__data like other variables
+    const excludeVars = ['__data', '__path'];
     const filtered = Array.from(vars).filter(v => !excludeVars.includes(v) && !loopVars.has(v));
 
     return filtered.sort(); // Sort for consistent output
