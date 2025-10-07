@@ -357,12 +357,24 @@ export const compile = (template: string, baseNamespace: string, options: { inde
     // If no variables, don't require $__data parameter (cleaner signature)
     const hasVariables = templateVars.length > 0;
 
-    // Check if we can optimize to an arrow function (single expression, no variables)
+    // Check if we can optimize to a single expression (with or without variables)
     const singleExpression = extractSingleExpression(compiled);
 
-    if (singleExpression && !hasVariables) {
-        // Use arrow function for single expression without variables
-        return `<?php\n\ndeclare(strict_types=1);\n\nreturn static fn(): string => ${singleExpression};\n`;
+    if (singleExpression) {
+        if (!hasVariables) {
+            // Use arrow function for single expression without variables
+            return `<?php\n\ndeclare(strict_types=1);\n\nreturn static fn(): string => ${singleExpression};\n`;
+        } else {
+            // Use regular function with direct return for single expression with variables
+            return `<?php
+
+declare(strict_types=1);
+
+return static function (array $__data): string {
+${varAssignments}    return ${singleExpression};
+};
+`;
+        }
     }
 
     // Check if we can optimize to string concatenation (no control structures)
