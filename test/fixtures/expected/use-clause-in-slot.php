@@ -8,6 +8,6 @@ return static function (array $__data): string {
 
     return component(
   componentClass: App\View\Components\Card::class,
-  slot: function() use ($author, $post) { ?><?= htmlspecialchars(data_get($post, 'title'), ENT_QUOTES, 'UTF-8') ?> by <?= htmlspecialchars($author->name, ENT_QUOTES, 'UTF-8') ?><?php },
+  slot: static function() use ($author, $post): string { ?><?= htmlspecialchars(data_get($post, 'title'), ENT_QUOTES, 'UTF-8') ?> by <?= htmlspecialchars($author->name, ENT_QUOTES, 'UTF-8') ?><?php },
 );
 };

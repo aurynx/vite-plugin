@@ -47,6 +47,20 @@ export class PhpBuilder {
     }
 
     /**
+     * Creates a static arrow function without return statement: static fn(): type => body
+     */
+    staticArrowFunction(params: string, returnType: string, body: string): string {
+        return phpSyntax.functions.arrow.static(params, returnType, body);
+    }
+
+    /**
+     * Creates a static regular function: static function(): type { ... }
+     */
+    staticFunction(params: string, returnType: string, body: string): string {
+        return phpSyntax.functions.regular.static('', params, returnType, body);
+    }
+
+    /**
      * Generates a function call with named arguments (PHP 8.0+).
      * Returns a multi-line representation when called with multiple args.
      */

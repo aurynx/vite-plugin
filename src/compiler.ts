@@ -66,6 +66,57 @@ const isPurePhpContent = (compiled: string): boolean => {
 };
 
 /**
+ * Check if compiled content is a single simple echo expression that can be
+ * converted to an arrow function. Returns the expression if true, null otherwise.
+ */
+const extractSingleEchoExpression = (compiled: string): string | null => {
+    const trimmed = compiled.trim();
+
+    // Count how many <?= or <?php tags are present
+    const phpTagCount = (trimmed.match(/<\?(?:=|php)/g) || []).length;
+
+    // Only proceed if there's exactly one PHP tag
+    if (phpTagCount !== 1) {
+        return null;
+    }
+
+    // Match single <?= expression ?> with optional whitespace
+    const singleEchoMatch = trimmed.match(/^<\?=\s*(.*?)\s*\?>$/s);
+    if (singleEchoMatch) {
+        return singleEchoMatch[1].trim();
+    }
+    return null;
+};
+
+/**
+ * Determine whether slot content is pure static HTML that can be returned
+ * directly from an arrow function without any PHP processing.
+ * Returns the cleaned HTML if it's pure static content, null otherwise.
+ */
+const isPureStaticHtml = (content: string): string | null => {
+    const trimmed = content.trim();
+
+    // Check for any template syntax that requires compilation:
+    // - PHP tags: <?
+    // - Variables: $
+    // - Directives: @
+    // - Template expressions: {{ or {{{
+    // - Component tags: <x-
+    if (
+        trimmed.includes('<?') ||
+        trimmed.includes('$') ||
+        trimmed.includes('@') ||
+        trimmed.includes('{{') ||
+        trimmed.includes('<x-')
+    ) {
+        return null;
+    }
+
+    // No template syntax found - it's pure HTML
+    return trimmed;
+};
+
+/**
  * Convert short echo / PHP blocks into plain echo statements suitable for
  * embedding inside a function body. Preserves basic indentation.
  */
@@ -118,19 +169,48 @@ const compileComponents = (template: string, ctx: CompilerContext): string => {
                 const slotIndent = ctx.indent.repeat(ctx.currentDepth + 1);
 
                 for (const [name, content] of Object.entries(namedSlots)) {
-                    const usedVariables = findUsedVariables(content);
-                    const useClause = usedVariables.length > 0 ? ` use (${usedVariables.join(', ')})` : '';
-                    const nestedCtx: CompilerContext = { ...ctx, currentDepth: ctx.currentDepth + 1 };
-                    const compiledContent = compileInternal(content, nestedCtx);
+                    const trimmedContent = content.trim();
+                    const staticHtml = isPureStaticHtml(trimmedContent);
 
-                    // Optimization: if the slot is only PHP, convert to echo statements
-                    // and avoid toggling in/out of PHP tags inside the closure.
-                    if (isPurePhpContent(compiledContent)) {
-                        const phpCode = convertToEchoStatements(compiledContent);
-                        slotsArray.push(`'${name}' => function()${useClause} {${phpCode}\n    }`);
+                    if (staticHtml) {
+                        // Pure static HTML - return as string, not as function
+                        const escapedHtml = staticHtml.replace(/'/g, "\\'").replace(/\n/g, "\\n");
+                        slotsArray.push(`'${name}' => '${escapedHtml}'`);
                     } else {
-                        // Keep original compiled HTML/PHP when mixed content is present.
-                        slotsArray.push(`'${name}' => function()${useClause} { ?>${compiledContent}<?php }`);
+                        const usedVariables = findUsedVariables(content);
+                        const nestedCtx: CompilerContext = { ...ctx, currentDepth: ctx.currentDepth + 1 };
+                        const compiledContent = compileInternal(content, nestedCtx);
+
+                        // Check if it's a single echo expression - use arrow function
+                        const singleEcho = extractSingleEchoExpression(compiledContent);
+                        if (singleEcho && usedVariables.length === 0) {
+                            const builder = createPhpBuilder();
+                            const slotString = builder.staticArrowFunction('', 'string', singleEcho);
+                            slotsArray.push(`'${name}' => ${slotString}`);
+                        } else if (isPurePhpContent(compiledContent)) {
+                            // Optimization: if the slot is only PHP, convert to echo statements
+                            // and avoid toggling in/out of PHP tags inside the closure.
+                            const phpCode = convertToEchoStatements(compiledContent);
+                            // If there are used variables, we need a regular function with use clause
+                            if (usedVariables.length > 0) {
+                                const useClause = ` use (${usedVariables.join(', ')})`;
+                                slotsArray.push(`'${name}' => static function()${useClause}: string {${phpCode}\n    }`);
+                            } else {
+                                const builder = createPhpBuilder();
+                                const slotString = builder.staticFunction('', 'string', `{${phpCode}\n    }`);
+                                slotsArray.push(`'${name}' => ${slotString}`);
+                            }
+                        } else {
+                            // Mixed content: keep compiled HTML/PHP wrapped in a closure.
+                            if (usedVariables.length > 0) {
+                                const useClause = ` use (${usedVariables.join(', ')})`;
+                                slotsArray.push(`'${name}' => static function()${useClause}: string { ?>${compiledContent}<?php }`);
+                            } else {
+                                const builder = createPhpBuilder();
+                                const slotString = builder.staticFunction('', 'string', `{ ?>${compiledContent}<?php }`);
+                                slotsArray.push(`'${name}' => ${slotString}`);
+                            }
+                        }
                     }
                 }
 
@@ -142,30 +222,62 @@ const compileComponents = (template: string, ctx: CompilerContext): string => {
             // Default slot: compile and preserve formatting when necessary
             const trimmedDefaultSlot = defaultSlot.trim();
             if (trimmedDefaultSlot !== '') {
-                const usedVariables = findUsedVariables(trimmedDefaultSlot);
-                const useClause = usedVariables.length > 0 ? ` use (${usedVariables.join(', ')})` : '';
-                const nestedCtx: CompilerContext = { ...ctx, currentDepth: ctx.currentDepth + 2 };
-                const compiledSlot = compileInternal(defaultSlot, nestedCtx);
+                // Check if slot is pure static HTML (no variables, no directives)
+                const staticHtml = isPureStaticHtml(trimmedDefaultSlot);
 
-                // If slot is PHP-only, emit echo statements for cleaner closure bodies.
-                if (isPurePhpContent(compiledSlot)) {
-                    const echoIndent = ctx.indent.repeat(ctx.currentDepth + 1);
-                    const phpCode = compiledSlot
-                        .replace(/<\?=\s*(.*?)\s*\?>/gs, (_, expr) => `\n${echoIndent}echo ${expr.trim()};`)
-                        .replace(/<\?php\s+(.*?)\s*\?>/gs, (_, code) => `\n${echoIndent}${code.trim()}`);
-                    const slotString = `function()${useClause} {${phpCode}\n${ctx.indent.repeat(ctx.currentDepth)}}`;
-                    callArgs.push(`slot: ${slotString}`);
+                if (staticHtml) {
+                    // Pure static HTML - return as string, not as function
+                    const escapedHtml = staticHtml.replace(/'/g, "\\'").replace(/\n/g, "\\n");
+                    callArgs.push(`slot: '${escapedHtml}'`);
                 } else {
-                    // Mixed content: keep compiled HTML/PHP wrapped in a closure.
-                    const slotString = `function()${useClause} { ?>${compiledSlot}<?php }`;
-                    callArgs.push(`slot: ${slotString}`);
+                    const usedVariables = findUsedVariables(trimmedDefaultSlot);
+                    const nestedCtx: CompilerContext = { ...ctx, currentDepth: ctx.currentDepth + 2 };
+                    const compiledSlot = compileInternal(defaultSlot, nestedCtx);
+
+                    // Check if it's a single echo expression - use arrow function
+                    const singleEcho = extractSingleEchoExpression(compiledSlot);
+                    if (singleEcho && usedVariables.length === 0) {
+                        const builder = createPhpBuilder();
+                        const slotString = builder.staticArrowFunction('', 'string', singleEcho);
+                        callArgs.push(`slot: ${slotString}`);
+                    } else if (isPurePhpContent(compiledSlot)) {
+                        // If slot is PHP-only, emit echo statements for cleaner closure bodies.
+                        const echoIndent = ctx.indent.repeat(ctx.currentDepth + 1);
+                        const phpCode = compiledSlot
+                            .replace(/<\?=\s*(.*?)\s*\?>/gs, (_, expr) => `\n${echoIndent}echo ${expr.trim()};`)
+                            .replace(/<\?php\s+(.*?)\s*\?>/gs, (_, code) => `\n${echoIndent}${code.trim()}`);
+
+                        if (usedVariables.length > 0) {
+                            const useClause = ` use (${usedVariables.join(', ')})`;
+                            const slotString = `static function()${useClause}: string {${phpCode}\n${ctx.indent.repeat(ctx.currentDepth)}}`;
+                            callArgs.push(`slot: ${slotString}`);
+                        } else {
+                            const builder = createPhpBuilder();
+                            const slotString = builder.staticFunction('', 'string', `{${phpCode}\n${ctx.indent.repeat(ctx.currentDepth)}}`);
+                            callArgs.push(`slot: ${slotString}`);
+                        }
+                    } else {
+                        // Mixed content: keep compiled HTML/PHP wrapped in a closure.
+                        if (usedVariables.length > 0) {
+                            const useClause = ` use (${usedVariables.join(', ')})`;
+                            const slotString = `static function()${useClause}: string { ?>${compiledSlot}<?php }`;
+                            callArgs.push(`slot: ${slotString}`);
+                        } else {
+                            const builder = createPhpBuilder();
+                            const slotString = builder.staticFunction('', 'string', `{ ?>${compiledSlot}<?php }`);
+                            callArgs.push(`slot: ${slotString}`);
+                        }
+                    }
                 }
             }
         }
 
         // Detect presence of slot-related args to decide formatting style
         const hasSlot = callArgs.some(arg =>
-            arg.startsWith('slot: function()') || arg.startsWith('slots: [')
+            arg.startsWith('slot: static fn') ||
+            arg.startsWith('slot: static function') ||
+            arg.startsWith('slot: function()') ||
+            arg.startsWith('slots: [')
         );
 
         const formattedCall = formatComponentCall(callArgs, ctx.indent, ctx.currentDepth, hasSlot);

@@ -9,8 +9,8 @@ return static function (array $__data): string {
     return component(
   componentClass: App\View\Components\Alert::class,
   slots: [
-    'title' => function() use ($code) { ?>Error: <?= htmlspecialchars($code, ENT_QUOTES, 'UTF-8') ?><?php }
+    'title' => static function() use ($code): string { ?>Error: <?= htmlspecialchars($code, ENT_QUOTES, 'UTF-8') ?><?php }
   ],
-  slot: function() use ($message) { ?>Message: <?= htmlspecialchars($message, ENT_QUOTES, 'UTF-8') ?><?php },
+  slot: static function() use ($message): string { ?>Message: <?= htmlspecialchars($message, ENT_QUOTES, 'UTF-8') ?><?php },
 );
 };

@@ -18,9 +18,9 @@ describe('Slots with Use Clause', () => {
 
         expect(result).toBe(normalizeUseClause(expected));
 
-        expect(result).toContain("'title' => function() use ($code)");
+        expect(result).toContain("'title' => static function() use ($code)");
 
-        expect(result).toContain("slot: function() use ($message)");
+        expect(result).toContain("slot: static function() use ($message)");
     });
 
     it('correctly handles variable scope in slots with loops', () => {
