@@ -299,8 +299,8 @@ const compileComponents = (template: string, ctx: CompilerContext): string => {
 
                     if (staticHtml) {
                         // Pure static HTML - return as string, not as function
-                        const escapedHtml = staticHtml.replace(/'/g, "\\'").replace(/\n/g, "\\n");
-                        slotsArray.push(`'${name}' => '${escapedHtml}'`);
+                        const phpExpression = stringToPhpExpression(staticHtml);
+                        slotsArray.push(`'${name}' => ${phpExpression}`);
                     } else {
                         const usedVariables = findUsedVariables(content);
                         const nestedCtx: CompilerContext = { ...ctx, currentDepth: ctx.currentDepth + 1 };
@@ -352,8 +352,8 @@ const compileComponents = (template: string, ctx: CompilerContext): string => {
 
                 if (staticHtml) {
                     // Pure static HTML - return as string, not as function
-                    const escapedHtml = staticHtml.replace(/'/g, "\\'").replace(/\n/g, "\\n");
-                    callArgs.push(`slot: '${escapedHtml}'`);
+                    const phpExpression = stringToPhpExpression(staticHtml);
+                    callArgs.push(`slot: ${phpExpression}`);
                 } else {
                     const usedVariables = findUsedVariables(trimmedDefaultSlot);
                     const nestedCtx: CompilerContext = { ...ctx, currentDepth: ctx.currentDepth + 2 };
@@ -656,10 +656,52 @@ const extractSingleExpression = (compiled: string): string | null => {
 const escapePhpString = (str: string): string => {
     return str
         .replace(/\\/g, '\\\\')  // Backslash first
-        .replace(/'/g, "\\'")     // Single quotes
-        .replace(/\n/g, '\\n')    // Newlines
-        .replace(/\r/g, '\\r')    // Carriage returns
-        .replace(/\t/g, '\\t');   // Tabs
+        .replace(/'/g, "\\'");    // Single quotes
+};
+
+/**
+ * Convert a string to PHP expression, replacing newlines with PHP_EOL.
+ * This generates code like: 'line1' . PHP_EOL . 'line2'
+ */
+const stringToPhpExpression = (str: string): string => {
+    const escaped = escapePhpString(str);
+
+    // Split by newlines and join with PHP_EOL
+    const lines = escaped.split('\n');
+
+    if (lines.length === 1) {
+        return `'${escaped}'`;
+    }
+
+    // Build concatenation: 'line1' . PHP_EOL . 'line2' . PHP_EOL . 'line3'
+    const parts: string[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const isLast = i === lines.length - 1;
+
+        // Add non-empty lines as strings
+        if (line.length > 0) {
+            parts.push(`'${line}'`);
+        }
+
+        // Add PHP_EOL after each line except the last
+        if (!isLast) {
+            parts.push('PHP_EOL');
+        }
+    }
+
+    // If no parts, return empty string
+    if (parts.length === 0) {
+        return "''";
+    }
+
+    // If single part, return it directly
+    if (parts.length === 1) {
+        return parts[0];
+    }
+
+    return parts.join(' . ');
 };
 
 /**
@@ -802,12 +844,12 @@ const convertToStringConcatenation = (compiled: string): string => {
         if (offset > lastIndex) {
             const staticText = compiled.substring(lastIndex, offset);
             if (staticText) {
-                parts.push(`'${escapePhpString(staticText)}'`);
+                parts.push(stringToPhpExpression(staticText));
             }
         }
 
-        // Add the expression (with proper casting to string)
-        parts.push(`(${expression})`);
+        // Add the expression directly without unnecessary parentheses
+        parts.push(expression);
 
         lastIndex = offset + match[0].length;
     }
@@ -816,7 +858,7 @@ const convertToStringConcatenation = (compiled: string): string => {
     if (lastIndex < compiled.length) {
         const staticText = compiled.substring(lastIndex);
         if (staticText) {
-            parts.push(`'${escapePhpString(staticText)}'`);
+            parts.push(stringToPhpExpression(staticText));
         }
     }
 

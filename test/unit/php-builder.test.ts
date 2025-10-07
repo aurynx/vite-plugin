@@ -113,6 +113,24 @@ describe('PHP Builder', () => {
         expect(safeEcho).toMatch(/\?>$/);
     });
 
+    it('creates safe expression without PHP tags', () => {
+        const builder = createPhpBuilder();
+        const safeExpr = builder.safeExpression('$user->name');
+
+        expect(safeExpr).toBe('htmlspecialchars($user->name, ENT_QUOTES, \'UTF-8\')');
+        expect(safeExpr).not.toContain('<?');
+        expect(safeExpr).not.toContain('?>');
+    });
+
+    it('creates safe expression for use in concatenation', () => {
+        const builder = createPhpBuilder();
+        const safeExpr = builder.safeExpression('data_get($user, \'name\')');
+
+        expect(safeExpr).toBe('htmlspecialchars(data_get($user, \'name\'), ENT_QUOTES, \'UTF-8\')');
+        expect(safeExpr).toContain('htmlspecialchars');
+        expect(safeExpr).toContain('ENT_QUOTES');
+    });
+
     it('can be reset and reused', () => {
         const builder = new PhpBuilder();
 

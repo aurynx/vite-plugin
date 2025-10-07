@@ -120,6 +120,14 @@ export class PhpBuilder {
     }
 
     /**
+     * Creates a safe expression with htmlspecialchars (without PHP tags): htmlspecialchars($expr, ENT_QUOTES, 'UTF-8')
+     * Useful for string concatenation contexts.
+     */
+    safeExpression(expression: string): string {
+        return `htmlspecialchars(${expression}, ENT_QUOTES, 'UTF-8')`;
+    }
+
+    /**
      * Creates a PHP statement block: <?php statement; ?>
      */
     phpStatement(statement: string): string {
