@@ -259,6 +259,106 @@ const escapePhpString = (str: string): string => {
 };
 
 /**
+ * Detect if compiled content is a simple foreach loop with only echo statements.
+ * Returns loop details if it can be optimized, null otherwise.
+ */
+const detectSimpleForeach = (compiled: string): { array: string; itemVar: string; content: string; prefix: string; suffix: string } | null => {
+    const trimmed = compiled.trim();
+
+    // Match: <?php foreach ($array as $item): ?> ... <?php endforeach; ?>
+    const foreachPattern = /^<\?php\s+foreach\s*\(\s*(\$\w+(?:\s+\?\?\s+\[\])?)\s+as\s+(\$\w+)\s*\)\s*:\s*\?>(.*?)<\?php\s+endforeach;\s*\?>$/s;
+    const match = trimmed.match(foreachPattern);
+
+    if (!match) {
+        return null;
+    }
+
+    const [, arrayExpr, itemVar, content] = match;
+
+    // Check if content only contains <?= ... ?> tags and static text (no nested control structures)
+    const hasNestedControlStructures = /<\?php\s+(if|foreach|while|for)\s/.test(content);
+    if (hasNestedControlStructures) {
+        return null;
+    }
+
+    // Extract prefix and suffix (static text before/after echo tags)
+    const echoPattern = /<\?=\s*(.*?)\s*\?>/gs;
+    const echoMatches = [...content.matchAll(echoPattern)];
+
+    if (echoMatches.length === 0) {
+        return null; // No echo statements
+    }
+
+    // Get text before first echo and after last echo
+    const firstEchoIndex = content.indexOf(echoMatches[0][0]);
+    const lastEchoMatch = echoMatches[echoMatches.length - 1];
+    const lastEchoIndex = content.lastIndexOf(lastEchoMatch[0]);
+
+    const prefix = content.substring(0, firstEchoIndex);
+    const suffix = content.substring(lastEchoIndex + lastEchoMatch[0].length);
+
+    return {
+        array: arrayExpr.trim(),
+        itemVar: itemVar.trim(),
+        content,
+        prefix,
+        suffix
+    };
+};
+
+/**
+ * Convert simple foreach loop to array_map + implode for better performance.
+ */
+const convertForeachToArrayMap = (loopInfo: { array: string; itemVar: string; content: string; prefix: string; suffix: string }): string => {
+    const { array, itemVar, content, prefix, suffix } = loopInfo;
+
+    // Extract all parts (static text and expressions)
+    const parts: string[] = [];
+    let lastIndex = 0;
+
+    const echoRegex = /<\?=\s*(.*?)\s*\?>/gs;
+    let match;
+
+    while ((match = echoRegex.exec(content)) !== null) {
+        const expression = match[1].trim();
+        const offset = match.index;
+
+        // Add static text before this expression
+        if (offset > lastIndex) {
+            const staticText = content.substring(lastIndex, offset);
+            if (staticText) {
+                parts.push(`'${escapePhpString(staticText)}'`);
+            }
+        }
+
+        // Add the expression
+        parts.push(`(${expression})`);
+
+        lastIndex = offset + match[0].length;
+    }
+
+    // Add remaining static text
+    if (lastIndex < content.length) {
+        const staticText = content.substring(lastIndex);
+        if (staticText) {
+            parts.push(`'${escapePhpString(staticText)}'`);
+        }
+    }
+
+    // Build the mapper function body
+    const mapperBody = parts.length === 1 && !parts[0].startsWith("'")
+        ? parts[0]
+        : parts.join(' . ');
+
+    // Generate array_map + implode code
+    const prefixStr = prefix ? `'${escapePhpString(prefix)}' . ` : '';
+    const suffixStr = suffix ? ` . '${escapePhpString(suffix)}'` : '';
+
+    // Use ternary to handle null/empty arrays
+    return `(${array} ? ${prefixStr}implode('', array_map(static fn(mixed ${itemVar}): string => ${mapperBody}, ${array}))${suffixStr} : '')`;
+};
+
+/**
  * Check if compiled content can be optimized to string concatenation.
  * Returns true if content only contains <?= ... ?> tags (no control structures).
  */
@@ -372,6 +472,37 @@ declare(strict_types=1);
 
 return static function (array $__data): string {
 ${varAssignments}    return ${singleExpression};
+};
+`;
+        }
+    }
+
+    // Check if we can optimize simple foreach loops to array_map + implode
+    const foreachLoop = detectSimpleForeach(compiled);
+    if (foreachLoop) {
+        const optimized = convertForeachToArrayMap(foreachLoop);
+
+        const functionSignature = hasVariables
+            ? 'static function (array $__data): string'
+            : 'static function (): string';
+
+        if (hasVariables) {
+            return `<?php
+
+declare(strict_types=1);
+
+return ${functionSignature} {
+${varAssignments.trimEnd()}
+    return ${optimized};
+};
+`;
+        } else {
+            return `<?php
+
+declare(strict_types=1);
+
+return ${functionSignature} {
+    return ${optimized};
 };
 `;
         }
