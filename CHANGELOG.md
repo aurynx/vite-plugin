@@ -1,5 +1,20 @@
 # Changelog
 
+# [0.5.0](https://github.com/aurynx/vite-plugin/compare/v0.4.0...v0.5.0) (2025-10-07)
+
+
+### Features
+
+* **compiler:** enhance component call formatting with indentation ([4c81feb](https://github.com/aurynx/vite-plugin/commit/4c81febc674586644fb2466311b92e514ba8959a))
+* **compiler:** enhance function handling for single expressions with variables ([d65371a](https://github.com/aurynx/vite-plugin/commit/d65371a8930a28f427d124cccc4ccd7191229de6))
+* **compiler:** improve formatting of component arguments and slots ([d4ac67b](https://github.com/aurynx/vite-plugin/commit/d4ac67bb581aa48d434c89d7325a052825723cf9))
+* **compiler:** optimize closure handling for variable extraction ([a00968a](https://github.com/aurynx/vite-plugin/commit/a00968af68f02e291ba3595419762121987c2d01))
+* **compiler:** optimize function signatures for single expressions ([6f03a45](https://github.com/aurynx/vite-plugin/commit/6f03a452c14ddad2c672b7a3b28c14be6a21b894))
+* **compiler:** optimize PHP output with string concatenation ([4b01912](https://github.com/aurynx/vite-plugin/commit/4b01912ca232e4701e182bb8de67bc293d6c7caf))
+* **compiler:** optimize PHP slot handling with echo statements ([4ab0f2a](https://github.com/aurynx/vite-plugin/commit/4ab0f2a5287fdcd5f1163818e8e366918c45ebab))
+* **compiler:** optimize simple foreach loops to use array_map and implode ([b2fe12b](https://github.com/aurynx/vite-plugin/commit/b2fe12b1916165bbbaa46c2aa118d9dacf8f6ad8))
+* **compiler:** replace extract() with explicit variable assignments ([db27bf3](https://github.com/aurynx/vite-plugin/commit/db27bf3e8691a25ea9434ead854a8e1a581892d6))
+
 # [0.4.0](https://github.com/aurynx/vite-plugin/compare/v0.3.1...v0.4.0) (2025-10-06)
 
 
